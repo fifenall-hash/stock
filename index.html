@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TQQQ 실시간 차트</title>
+    <title>TQQQ 실시간 차트 (이격도 확인용)</title>
     <style>
         body {
             margin: 0;
@@ -41,7 +41,7 @@
 
     <div class="header">
         <h1>TQQQ (ProShares UltraPro QQQ)</h1>
-        <p>나스닥 100 지수 3배 레버리지 ETF 실시간 차트</p>
+        <p>1500일 이동평균선 설정을 통한 이격도 확인 차트</p>
     </div>
 
     <div class="chart-container">
@@ -63,7 +63,10 @@
           "hide_legend": false,
           "save_image": false,
           "container_id": "tradingview_tqqq",
-          "support_host": "https://www.tradingview.com"
+          "support_host": "https://www.tradingview.com",
+          "studies": [
+            "MASimple@tv-basicstudies"
+          ]
         }
           </script>
         </div>
