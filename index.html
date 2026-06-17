@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TQQQ 차트 및 Raw 데이터 확인</title>
+    <title>TQQQ 일봉 차트 및 1500일 이격도</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
@@ -78,7 +78,7 @@
             background-color: #1a252f;
         }
         #table-container {
-            display: none; /* 초기에는 숨김 */
+            display: none;
             max-height: 400px;
             overflow-y: auto;
             border: 1px solid #ddd;
@@ -110,7 +110,7 @@
     <div class="widget-container">
         <div class="header">
             <h1>TQQQ Price & 1500-Day Disparity Ratio</h1>
-            <p>액면분할 반영 수정종가 기준 (차트 렌더링 및 Raw 데이터 검증용)</p>
+            <p>액면분할 반영 일봉(Daily) 수정종가 (파란선: 주가 / 붉은선: 1500일 이격 배수)</p>
         </div>
         
         <div class="chart-wrapper">
@@ -119,7 +119,7 @@
         </div>
 
         <div class="btn-container">
-            <button class="btn" onclick="toggleTable()">Raw 데이터 표 보기/숨기기 (엑셀 형식)</button>
+            <button class="btn" onclick="toggleTable()">일봉 Raw 데이터 표 보기/숨기기</button>
         </div>
 
         <div id="table-container">
@@ -139,7 +139,9 @@
 
     <script>
         const symbol = 'TQQQ';
-        const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=max&interval=1d`;
+        // 핵심 수정: range=max 대신 UNIX 타임스탬프를 명시하여 야후 서버가 강제로 월봉으로 압축하는 것을 차단
+        const currentUnixTime = Math.floor(Date.now() / 1000); 
+        const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?period1=0&period2=${currentUnixTime}&interval=1d`;
 
         const proxyList = [
             `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
@@ -243,7 +245,7 @@
                     labels: labels,
                     datasets: [
                         {
-                            label: 'TQQQ 수정종가 (로그형)',
+                            label: 'TQQQ 일봉 수정종가 (로그스케일)',
                             data: priceData,
                             borderColor: '#3498db',
                             backgroundColor: 'rgba(52, 152, 219, 0.1)',
@@ -315,7 +317,6 @@
             });
         }
 
-        // 테이블에 데이터를 채워넣는 함수 (최신 날짜가 맨 위로 오도록 역순으로 배치)
         function populateTable(dates, prices, disparityData) {
             const tableBody = document.getElementById('table-body');
             let htmlContent = '';
@@ -336,7 +337,6 @@
             tableBody.innerHTML = htmlContent;
         }
 
-        // 버튼 클릭 시 테이블을 보여주거나 숨기는 함수
         function toggleTable() {
             const container = document.getElementById('table-container');
             if (container.style.display === 'none' || container.style.display === '') {
