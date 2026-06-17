@@ -52,6 +52,8 @@
             font-size: 18px;
             color: #3498db;
             font-weight: bold;
+            text-align: center;
+            line-height: 1.5;
         }
     </style>
 </head>
@@ -64,24 +66,52 @@
         </div>
         
         <div class="chart-wrapper">
-            <div id="loading">데이터를 불러오고 계산하는 중입니다...</div>
+            <div id="loading">
+                데이터를 불러오고 계산하는 중입니다...<br>
+                <span style="font-size: 14px; color: #7f8c8d;">(여러 프록시 서버를 확인하느라 몇 초 정도 걸릴 수 있습니다)</span>
+            </div>
             <canvas id="myChart"></canvas>
         </div>
     </div>
 
     <script>
-        // 야후 파이낸스 API (CORS 우회를 위해 프록시 서버 사용)
-        // range=max 로 설정하여 TQQQ 상장(2010년)부터 현재까지의 모든 일봉 데이터를 가져옵니다.
+        // 여러 프록시 서버를 순차적으로 시도하여 안정성을 높이는 로직
         const symbol = 'TQQQ';
-        const targetUrl = encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=max&interval=1d`);
-        const proxyUrl = `https://api.allorigins.win/raw?url=${targetUrl}`;
+        const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=max&interval=1d`;
+
+        // 작동 가능한 무료 CORS 프록시 리스트
+        const proxyList = [
+            `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
+            `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
+            `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
+        ];
+
+        async function fetchWithFallback() {
+            for (let proxy of proxyList) {
+                try {
+                    console.log(`데이터 요청 시도 중: ${proxy}`);
+                    const response = await fetch(proxy, { 
+                        method: 'GET', 
+                        headers: { 'Accept': 'application/json' }
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        // 야후 파이낸스 정상 응답 포맷인지 확인
+                        if (data && data.chart && data.chart.result) {
+                            return data;
+                        }
+                    }
+                } catch (error) {
+                    console.warn(`프록시 실패 (${proxy}):`, error);
+                }
+            }
+            throw new Error('모든 프록시 서버에서 데이터 로드에 실패했습니다.');
+        }
 
         async function fetchAndRenderChart() {
             try {
-                const response = await fetch(proxyUrl);
-                if (!response.ok) throw new Error('네트워크 응답에 문제가 있습니다.');
-                
-                const rawData = await response.json();
+                const rawData = await fetchWithFallback();
                 const result = rawData.chart.result[0];
                 
                 const timestamps = result.timestamp;
@@ -90,8 +120,6 @@
                 let dates = [];
                 let prices = [];
                 let disparityData = [];
-
-                // 1500일 이격도 계산을 위한 변수
                 const MA_PERIOD = 1500;
 
                 for (let i = 0; i < timestamps.length; i++) {
@@ -110,17 +138,13 @@
                     // 1500일 이동평균 및 이격도 계산
                     if (prices.length >= MA_PERIOD) {
                         let sum = 0;
-                        // 최근 1500일의 종가 합산
                         for (let j = 0; j < MA_PERIOD; j++) {
                             sum += prices[prices.length - 1 - j];
                         }
                         const average = sum / MA_PERIOD;
-                        
-                        // 이격도 공식: (당일 종가 / 이동평균선) * 100
                         const disparity = (currentPrice / average) * 100;
                         disparityData.push(disparity);
                     } else {
-                        // 1500일 이전의 데이터는 이격도 계산 불가
                         disparityData.push(null);
                     }
                 }
@@ -129,16 +153,23 @@
                 document.getElementById('loading').style.display = 'none';
 
             } catch (error) {
-                console.error('Data Fetch Error:', error);
-                document.getElementById('loading').innerText = '데이터를 불러오는 데 실패했습니다.';
-                document.getElementById('loading').style.color = 'red';
+                console.error('최종 Data Fetch Error:', error);
+                document.getElementById('loading').innerHTML = 
+                    '데이터를 불러오는 데 실패했습니다.<br>' +
+                    '<span style="font-size:14px;">(야후 파이낸스 API 또는 프록시가 일시적으로 차단되었습니다. 잠시 후 새로고침 해주세요.)</span>';
+                document.getElementById('loading').style.color = '#e74c3c';
             }
         }
 
         function renderChart(labels, priceData, disparityData) {
             const ctx = document.getElementById('myChart').getContext('2d');
             
-            new Chart(ctx, {
+            // 기존 차트가 있다면 파괴하고 다시 그림 (중복 렌더링 방지)
+            if (window.myLineChart) {
+                window.myLineChart.destroy();
+            }
+            
+            window.myLineChart = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: labels,
@@ -191,31 +222,20 @@
                     scales: {
                         x: {
                             grid: { display: false },
-                            ticks: { maxTicksLimit: 12 } // X축 날짜 라벨 텍스트가 겹치지 않게 조절
+                            ticks: { maxTicksLimit: 12 }
                         },
                         y: {
                             type: 'linear',
                             display: true,
                             position: 'left',
-                            title: {
-                                display: true,
-                                text: '주가 (USD)',
-                                color: '#3498db'
-                            }
+                            title: { display: true, text: '주가 (USD)', color: '#3498db' }
                         },
                         y1: {
                             type: 'linear',
                             display: true,
                             position: 'right',
-                            title: {
-                                display: true,
-                                text: '이격도 (%)',
-                                color: '#e74c3c'
-                            },
-                            // 오른쪽 축의 그리드 라인이 왼쪽 축과 겹쳐서 지저분해지는 것을 방지
-                            grid: {
-                                drawOnChartArea: false 
-                            }
+                            title: { display: true, text: '이격도 (%)', color: '#e74c3c' },
+                            grid: { drawOnChartArea: false }
                         }
                     }
                 }
