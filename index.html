@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TQQQ 일봉 차트 및 1500일 이격도</title>
+    <title>TQQQ 일봉 차트 및 1500일 이격도 (꽉 찬 화면)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
@@ -139,7 +139,6 @@
 
     <script>
         const symbol = 'TQQQ';
-        // 핵심 수정: range=max 대신 UNIX 타임스탬프를 명시하여 야후 서버가 강제로 월봉으로 압축하는 것을 차단
         const currentUnixTime = Math.floor(Date.now() / 1000); 
         const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?period1=0&period2=${currentUnixTime}&interval=1d`;
 
@@ -219,9 +218,17 @@
                     }
                 }
 
-                const maxDisparityValue = validDisparities.length > 0 ? Math.ceil(Math.max(...validDisparities) + 1) : 5;
+                // 이격도의 최댓값과 최솟값을 정확하게 추출
+                let maxDisparityValue = 5;
+                let minDisparityValue = 0;
+                
+                if (validDisparities.length > 0) {
+                    maxDisparityValue = Math.max(...validDisparities);
+                    minDisparityValue = Math.min(...validDisparities);
+                }
 
-                renderChart(dates, prices, disparityData, maxDisparityValue);
+                // 추출한 최댓값과 최솟값을 렌더링 함수로 전달
+                renderChart(dates, prices, disparityData, maxDisparityValue, minDisparityValue);
                 populateTable(dates, prices, disparityData);
                 document.getElementById('loading').style.display = 'none';
 
@@ -232,7 +239,7 @@
             }
         }
 
-        function renderChart(labels, priceData, disparityData, maxDisp) {
+        function renderChart(labels, priceData, disparityData, maxDisp, minDisp) {
             const ctx = document.getElementById('myChart').getContext('2d');
             
             if (window.myLineChart) {
@@ -309,7 +316,8 @@
                             position: 'right',
                             title: { display: true, text: '이격 비율 (현재가 / 1500일 평균)', color: '#e74c3c' },
                             grid: { drawOnChartArea: false },
-                            min: 0, 
+                            // 우측 Y축의 범위를 실제 데이터의 최솟값과 최댓값으로 강제 지정하여 바닥과 천장에 닿게 함
+                            min: minDisp, 
                             max: maxDisp 
                         }
                     }
