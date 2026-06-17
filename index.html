@@ -54,6 +54,10 @@
             font-weight: bold;
             text-align: center;
             line-height: 1.5;
+            z-index: 10;
+            background: rgba(255,255,255,0.8);
+            padding: 20px;
+            border-radius: 8px;
         }
     </style>
 </head>
@@ -62,14 +66,11 @@
     <div class="widget-container">
         <div class="header">
             <h1>TQQQ Price & 1500-Day Disparity Index</h1>
-            <p>액면분할이 반영된 수정종가 기준 (파란선: 주가 / 붉은선: 1500일 이격도)</p>
+            <p>액면분할 반영 수정종가 (파란선: 주가 / 붉은선: 1500일 이격도)</p>
         </div>
         
         <div class="chart-wrapper">
-            <div id="loading">
-                데이터를 불러오고 계산하는 중입니다...<br>
-                <span style="font-size: 14px; color: #7f8c8d;">(잠시만 기다려주세요)</span>
-            </div>
+            <div id="loading">데이터를 분석하고 계산하는 중입니다...<br><span style="font-size:14px; color:#7f8c8d;">(최대 5초 정도 소요될 수 있습니다)</span></div>
             <canvas id="myChart"></canvas>
         </div>
     </div>
@@ -93,7 +94,7 @@
                         if (data && data.chart && data.chart.result) return data;
                     }
                 } catch (error) {
-                    console.warn(`프록시 실패 (${proxy}):`, error);
+                    console.warn(`Proxy fail:`, error);
                 }
             }
             throw new Error('데이터 로드 실패');
@@ -105,39 +106,49 @@
                 const result = rawData.chart.result[0];
                 
                 const timestamps = result.timestamp;
-                // 핵심 수정: 액면분할 오류 방지를 위해 일반 종가(close) 대신 수정종가(adjclose)를 불러옵니다.
                 const priceDataArray = result.indicators.adjclose ? result.indicators.adjclose[0].adjclose : result.indicators.quote[0].close;
 
                 let dates = [];
                 let prices = [];
                 let disparityData = [];
-                const MA_PERIOD = 1500;
                 
-                let sum = 0; // 빠른 이동평균 계산을 위한 누적합 변수
+                const MA_PERIOD = 1500;
+                let windowPrices = []; // 결측치 에러를 방지하기 위한 슬라이딩 윈도우 배열
 
                 for (let i = 0; i < timestamps.length; i++) {
                     const currentPrice = priceDataArray[i];
                     
-                    if (currentPrice === null || currentPrice === undefined) continue;
+                    // 에러 데이터(null, undefined, 0 이하, 비정상 숫자)를 철저히 걸러냅니다.
+                    if (!currentPrice || currentPrice <= 0 || !Number.isFinite(currentPrice)) {
+                        continue;
+                    }
 
                     const dateObj = new Date(timestamps[i] * 1000);
                     const dateStr = dateObj.toISOString().split('T')[0];
                     
                     dates.push(dateStr);
                     prices.push(currentPrice);
-                    sum += currentPrice;
+                    windowPrices.push(currentPrice);
 
-                    // 슬라이딩 윈도우 방식: 1500개가 넘어가면 가장 오래된 가격을 합산에서 빼줌
-                    if (prices.length > MA_PERIOD) {
-                        sum -= prices[prices.length - 1 - MA_PERIOD];
+                    // 1500일 유지 로직
+                    if (windowPrices.length > MA_PERIOD) {
+                        windowPrices.shift(); // 가장 오래된 과거 데이터 1개 제거
                     }
 
-                    // 1500일 이격도 계산
-                    if (prices.length >= MA_PERIOD) {
+                    // 정확히 1500일의 데이터가 모였을 때만 이격도 계산
+                    if (windowPrices.length === MA_PERIOD) {
+                        // 배열 안의 1500개 데이터를 모두 더해 안전하게 평균 도출
+                        const sum = windowPrices.reduce((a, b) => a + b, 0);
                         const average = sum / MA_PERIOD;
-                        const disparity = (currentPrice / average) * 100;
-                        disparityData.push(disparity);
+                        
+                        if (average > 0) {
+                            const disparity = (currentPrice / average) * 100;
+                            disparityData.push(disparity);
+                        } else {
+                            disparityData.push(null);
+                        }
                     } else {
+                        // 1500일이 안 된 과거 데이터 기간은 빈칸 처리
                         disparityData.push(null);
                     }
                 }
@@ -146,11 +157,9 @@
                 document.getElementById('loading').style.display = 'none';
 
             } catch (error) {
-                console.error('최종 Data Fetch Error:', error);
-                document.getElementById('loading').innerHTML = 
-                    '데이터를 불러오는 데 실패했습니다.<br>' +
-                    '<span style="font-size:14px;">(야후 파이낸스 API 또는 프록시가 일시적으로 차단되었습니다. 잠시 후 새로고침 해주세요.)</span>';
-                document.getElementById('loading').style.color = '#e74c3c';
+                console.error(error);
+                document.getElementById('loading').innerHTML = '데이터 연동에 실패했습니다.<br>잠시 후 다시 시도해 주세요.';
+                document.getElementById('loading').style.color = 'red';
             }
         }
 
@@ -167,26 +176,25 @@
                     labels: labels,
                     datasets: [
                         {
-                            label: 'TQQQ 수정종가 (USD)',
+                            label: 'TQQQ 수정종가 (로그형)',
                             data: priceData,
                             borderColor: '#3498db',
                             backgroundColor: 'rgba(52, 152, 219, 0.1)',
-                            borderWidth: 2,
+                            borderWidth: 1.5,
                             pointRadius: 0,
                             yAxisID: 'y',
-                            tension: 0.1,
-                            spanGaps: true // null 값이 있어도 선이 끊어지지 않도록 연결
+                            tension: 0.1
                         },
                         {
                             label: '1500일 이격도 (%)',
                             data: disparityData,
-                            borderColor: '#e74c3c',
+                            borderColor: '#e74c3c', // 붉은색
                             backgroundColor: 'rgba(231, 76, 60, 0.1)',
-                            borderWidth: 2,
+                            borderWidth: 2, // 이격도 선이 더 잘 보이도록 두께 강조
                             pointRadius: 0,
                             yAxisID: 'y1',
                             tension: 0.1,
-                            spanGaps: true
+                            spanGaps: true // 중간에 null이 있어도 끊기지 않게 연결
                         }
                     ]
                 },
@@ -202,12 +210,8 @@
                             callbacks: {
                                 label: function(context) {
                                     let label = context.dataset.label || '';
-                                    if (label) {
-                                        label += ': ';
-                                    }
-                                    if (context.parsed.y !== null) {
-                                        label += context.parsed.y.toFixed(2);
-                                    }
+                                    if (label) label += ': ';
+                                    if (context.parsed.y !== null) label += context.parsed.y.toFixed(2);
                                     return label;
                                 }
                             }
@@ -219,13 +223,13 @@
                             ticks: { maxTicksLimit: 12 }
                         },
                         y: {
-                            type: 'logarithmic',
+                            type: 'logarithmic', // 좌측 축: 주가 로그 스케일
                             display: true,
                             position: 'left',
-                            title: { display: true, text: '수정종가 (USD, 로그스케일)', color: '#3498db' }
+                            title: { display: true, text: '수정종가 (USD)', color: '#3498db' }
                         },
                         y1: {
-                            type: 'linear',
+                            type: 'linear', // 우측 축: 이격도 % 선형 스케일
                             display: true,
                             position: 'right',
                             title: { display: true, text: '이격도 (%)', color: '#e74c3c' },
