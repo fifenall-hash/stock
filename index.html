@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TQQQ 종가(로그) 및 1500일 이격도</title>
+    <title>TQQQ 수정종가(로그) 및 1500일 이격도</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
@@ -61,25 +61,23 @@
 
     <div class="widget-container">
         <div class="header">
-            <h1>TQQQ Price (Log Scale) & 1500-Day Disparity</h1>
-            <p>야후 파이낸스 API 기반 실시간 계산 차트 (파란선: 종가 / 붉은선: 1500일 이격도)</p>
+            <h1>TQQQ Price & 1500-Day Disparity Index</h1>
+            <p>액면분할이 반영된 수정종가 기준 (파란선: 주가 / 붉은선: 1500일 이격도)</p>
         </div>
         
         <div class="chart-wrapper">
             <div id="loading">
                 데이터를 불러오고 계산하는 중입니다...<br>
-                <span style="font-size: 14px; color: #7f8c8d;">(여러 프록시 서버를 확인하느라 몇 초 정도 걸릴 수 있습니다)</span>
+                <span style="font-size: 14px; color: #7f8c8d;">(잠시만 기다려주세요)</span>
             </div>
             <canvas id="myChart"></canvas>
         </div>
     </div>
 
     <script>
-        // 여러 프록시 서버를 순차적으로 시도하여 안정성을 높이는 로직
         const symbol = 'TQQQ';
         const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=max&interval=1d`;
 
-        // 작동 가능한 무료 CORS 프록시 리스트
         const proxyList = [
             `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
             `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
@@ -89,24 +87,16 @@
         async function fetchWithFallback() {
             for (let proxy of proxyList) {
                 try {
-                    console.log(`데이터 요청 시도 중: ${proxy}`);
-                    const response = await fetch(proxy, { 
-                        method: 'GET', 
-                        headers: { 'Accept': 'application/json' }
-                    });
-                    
+                    const response = await fetch(proxy, { method: 'GET', headers: { 'Accept': 'application/json' }});
                     if (response.ok) {
                         const data = await response.json();
-                        // 야후 파이낸스 정상 응답 포맷인지 확인
-                        if (data && data.chart && data.chart.result) {
-                            return data;
-                        }
+                        if (data && data.chart && data.chart.result) return data;
                     }
                 } catch (error) {
                     console.warn(`프록시 실패 (${proxy}):`, error);
                 }
             }
-            throw new Error('모든 프록시 서버에서 데이터 로드에 실패했습니다.');
+            throw new Error('데이터 로드 실패');
         }
 
         async function fetchAndRenderChart() {
@@ -115,32 +105,35 @@
                 const result = rawData.chart.result[0];
                 
                 const timestamps = result.timestamp;
-                const closePrices = result.indicators.quote[0].close;
+                // 핵심 수정: 액면분할 오류 방지를 위해 일반 종가(close) 대신 수정종가(adjclose)를 불러옵니다.
+                const priceDataArray = result.indicators.adjclose ? result.indicators.adjclose[0].adjclose : result.indicators.quote[0].close;
 
                 let dates = [];
                 let prices = [];
                 let disparityData = [];
                 const MA_PERIOD = 1500;
+                
+                let sum = 0; // 빠른 이동평균 계산을 위한 누적합 변수
 
                 for (let i = 0; i < timestamps.length; i++) {
-                    const currentPrice = closePrices[i];
+                    const currentPrice = priceDataArray[i];
                     
-                    // null 데이터 스킵 (휴장일 에러 방지)
                     if (currentPrice === null || currentPrice === undefined) continue;
 
-                    // 날짜 변환
                     const dateObj = new Date(timestamps[i] * 1000);
                     const dateStr = dateObj.toISOString().split('T')[0];
                     
                     dates.push(dateStr);
                     prices.push(currentPrice);
+                    sum += currentPrice;
 
-                    // 1500일 이동평균 및 이격도 계산
+                    // 슬라이딩 윈도우 방식: 1500개가 넘어가면 가장 오래된 가격을 합산에서 빼줌
+                    if (prices.length > MA_PERIOD) {
+                        sum -= prices[prices.length - 1 - MA_PERIOD];
+                    }
+
+                    // 1500일 이격도 계산
                     if (prices.length >= MA_PERIOD) {
-                        let sum = 0;
-                        for (let j = 0; j < MA_PERIOD; j++) {
-                            sum += prices[prices.length - 1 - j];
-                        }
                         const average = sum / MA_PERIOD;
                         const disparity = (currentPrice / average) * 100;
                         disparityData.push(disparity);
@@ -164,7 +157,6 @@
         function renderChart(labels, priceData, disparityData) {
             const ctx = document.getElementById('myChart').getContext('2d');
             
-            // 기존 차트가 있다면 파괴하고 다시 그림 (중복 렌더링 방지)
             if (window.myLineChart) {
                 window.myLineChart.destroy();
             }
@@ -175,14 +167,15 @@
                     labels: labels,
                     datasets: [
                         {
-                            label: 'TQQQ 종가 (USD)',
+                            label: 'TQQQ 수정종가 (USD)',
                             data: priceData,
                             borderColor: '#3498db',
                             backgroundColor: 'rgba(52, 152, 219, 0.1)',
                             borderWidth: 2,
                             pointRadius: 0,
                             yAxisID: 'y',
-                            tension: 0.1
+                            tension: 0.1,
+                            spanGaps: true // null 값이 있어도 선이 끊어지지 않도록 연결
                         },
                         {
                             label: '1500일 이격도 (%)',
@@ -192,7 +185,8 @@
                             borderWidth: 2,
                             pointRadius: 0,
                             yAxisID: 'y1',
-                            tension: 0.1
+                            tension: 0.1,
+                            spanGaps: true
                         }
                     ]
                 },
@@ -225,13 +219,13 @@
                             ticks: { maxTicksLimit: 12 }
                         },
                         y: {
-                            type: 'logarithmic', // 선형(linear)에서 로그(logarithmic) 스케일로 변경됨
+                            type: 'logarithmic',
                             display: true,
                             position: 'left',
-                            title: { display: true, text: '주가 (USD, 로그스케일)', color: '#3498db' }
+                            title: { display: true, text: '수정종가 (USD, 로그스케일)', color: '#3498db' }
                         },
                         y1: {
-                            type: 'linear', // 이격도는 % 수치이므로 선형 스케일 유지
+                            type: 'linear',
                             display: true,
                             position: 'right',
                             title: { display: true, text: '이격도 (%)', color: '#e74c3c' },
@@ -242,7 +236,6 @@
             });
         }
 
-        // 스크립트 실행
         fetchAndRenderChart();
     </script>
 </body>
