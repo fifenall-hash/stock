@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TQQQ 종가 및 1500일 이격도</title>
+    <title>TQQQ 종가(로그) 및 1500일 이격도</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
@@ -61,7 +61,7 @@
 
     <div class="widget-container">
         <div class="header">
-            <h1>TQQQ Price & 1500-Day Disparity Index</h1>
+            <h1>TQQQ Price (Log Scale) & 1500-Day Disparity</h1>
             <p>야후 파이낸스 API 기반 실시간 계산 차트 (파란선: 종가 / 붉은선: 1500일 이격도)</p>
         </div>
         
@@ -225,13 +225,13 @@
                             ticks: { maxTicksLimit: 12 }
                         },
                         y: {
-                            type: 'linear',
+                            type: 'logarithmic', // 선형(linear)에서 로그(logarithmic) 스케일로 변경됨
                             display: true,
                             position: 'left',
-                            title: { display: true, text: '주가 (USD)', color: '#3498db' }
+                            title: { display: true, text: '주가 (USD, 로그스케일)', color: '#3498db' }
                         },
                         y1: {
-                            type: 'linear',
+                            type: 'linear', // 이격도는 % 수치이므로 선형 스케일 유지
                             display: true,
                             position: 'right',
                             title: { display: true, text: '이격도 (%)', color: '#e74c3c' },
