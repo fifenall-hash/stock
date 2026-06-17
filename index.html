@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TQQQ 수정종가(로그) 및 1500일 이격도</title>
+    <title>TQQQ 수정종가 및 1500일 이격도</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
@@ -55,7 +55,7 @@
             text-align: center;
             line-height: 1.5;
             z-index: 10;
-            background: rgba(255,255,255,0.8);
+            background: rgba(255,255,255,0.9);
             padding: 20px;
             border-radius: 8px;
         }
@@ -65,8 +65,8 @@
 
     <div class="widget-container">
         <div class="header">
-            <h1>TQQQ Price & 1500-Day Disparity Index</h1>
-            <p>액면분할 반영 수정종가 (파란선: 주가 / 붉은선: 1500일 이격도)</p>
+            <h1>TQQQ Price & 1500-Day Disparity Ratio</h1>
+            <p>액면분할 반영 수정종가 (파란선: 주가 / 붉은선: 1500일 이격 배수)</p>
         </div>
         
         <div class="chart-wrapper">
@@ -111,14 +111,14 @@
                 let dates = [];
                 let prices = [];
                 let disparityData = [];
+                let validDisparities = []; // Y축 최댓값 계산을 위해 정상 값만 모아두는 배열
                 
                 const MA_PERIOD = 1500;
-                let windowPrices = []; // 결측치 에러를 방지하기 위한 슬라이딩 윈도우 배열
+                let windowPrices = [];
 
                 for (let i = 0; i < timestamps.length; i++) {
                     const currentPrice = priceDataArray[i];
                     
-                    // 에러 데이터(null, undefined, 0 이하, 비정상 숫자)를 철저히 걸러냅니다.
                     if (!currentPrice || currentPrice <= 0 || !Number.isFinite(currentPrice)) {
                         continue;
                     }
@@ -130,30 +130,36 @@
                     prices.push(currentPrice);
                     windowPrices.push(currentPrice);
 
-                    // 1500일 유지 로직
                     if (windowPrices.length > MA_PERIOD) {
-                        windowPrices.shift(); // 가장 오래된 과거 데이터 1개 제거
+                        windowPrices.shift();
                     }
 
-                    // 정확히 1500일의 데이터가 모였을 때만 이격도 계산
                     if (windowPrices.length === MA_PERIOD) {
-                        // 배열 안의 1500개 데이터를 모두 더해 안전하게 평균 도출
                         const sum = windowPrices.reduce((a, b) => a + b, 0);
                         const average = sum / MA_PERIOD;
                         
                         if (average > 0) {
-                            const disparity = (currentPrice / average) * 100;
-                            disparityData.push(disparity);
+                            // 요청하신 공식: 해당 날짜의 종가를 지난 1500일간 종가 평균으로 나눔
+                            const disparity = currentPrice / average; 
+                            
+                            if (Number.isFinite(disparity)) {
+                                disparityData.push(disparity);
+                                validDisparities.push(disparity);
+                            } else {
+                                disparityData.push(null);
+                            }
                         } else {
                             disparityData.push(null);
                         }
                     } else {
-                        // 1500일이 안 된 과거 데이터 기간은 빈칸 처리
                         disparityData.push(null);
                     }
                 }
 
-                renderChart(dates, prices, disparityData);
+                // 이격도 데이터 중 최댓값을 찾아 Y축 스케일을 여유 있게(+1) 설정
+                const maxDisparityValue = validDisparities.length > 0 ? Math.ceil(Math.max(...validDisparities) + 1) : 5;
+
+                renderChart(dates, prices, disparityData, maxDisparityValue);
                 document.getElementById('loading').style.display = 'none';
 
             } catch (error) {
@@ -163,7 +169,7 @@
             }
         }
 
-        function renderChart(labels, priceData, disparityData) {
+        function renderChart(labels, priceData, disparityData, maxDisp) {
             const ctx = document.getElementById('myChart').getContext('2d');
             
             if (window.myLineChart) {
@@ -186,15 +192,15 @@
                             tension: 0.1
                         },
                         {
-                            label: '1500일 이격도 (%)',
+                            label: '1500일 이격 비율 (배수)',
                             data: disparityData,
-                            borderColor: '#e74c3c', // 붉은색
+                            borderColor: '#e74c3c', 
                             backgroundColor: 'rgba(231, 76, 60, 0.1)',
-                            borderWidth: 2, // 이격도 선이 더 잘 보이도록 두께 강조
+                            borderWidth: 2, 
                             pointRadius: 0,
                             yAxisID: 'y1',
                             tension: 0.1,
-                            spanGaps: true // 중간에 null이 있어도 끊기지 않게 연결
+                            spanGaps: true
                         }
                     ]
                 },
@@ -211,7 +217,14 @@
                                 label: function(context) {
                                     let label = context.dataset.label || '';
                                     if (label) label += ': ';
-                                    if (context.parsed.y !== null) label += context.parsed.y.toFixed(2);
+                                    if (context.parsed.y !== null) {
+                                        // 이격도 값인 경우 'x' (배수)를 붙여서 출력
+                                        if (context.datasetIndex === 1) {
+                                            label += context.parsed.y.toFixed(2) + 'x';
+                                        } else {
+                                            label += context.parsed.y.toFixed(2);
+                                        }
+                                    }
                                     return label;
                                 }
                             }
@@ -223,17 +236,20 @@
                             ticks: { maxTicksLimit: 12 }
                         },
                         y: {
-                            type: 'logarithmic', // 좌측 축: 주가 로그 스케일
+                            type: 'logarithmic',
                             display: true,
                             position: 'left',
                             title: { display: true, text: '수정종가 (USD)', color: '#3498db' }
                         },
                         y1: {
-                            type: 'linear', // 우측 축: 이격도 % 선형 스케일
+                            type: 'linear',
                             display: true,
                             position: 'right',
-                            title: { display: true, text: '이격도 (%)', color: '#e74c3c' },
-                            grid: { drawOnChartArea: false }
+                            title: { display: true, text: '이격 비율 (현재가 / 1500일 평균)', color: '#e74c3c' },
+                            grid: { drawOnChartArea: false },
+                            // 계산된 최댓값을 바탕으로 Y축 범위를 강제로 설정하여 버그 원천 차단
+                            min: 0, 
+                            max: maxDisp 
                         }
                     }
                 }
