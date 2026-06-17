@@ -3,74 +3,227 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TQQQ 실시간 차트 (이격도 확인용)</title>
+    <title>TQQQ 종가 및 1500일 이격도</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
             margin: 0;
-            padding: 0;
+            padding: 20px;
+            background-color: #f8f9fa;
+            font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
             display: flex;
             flex-direction: column;
             align-items: center;
-            background-color: #f4f4f9;
-            font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+        }
+        .widget-container {
+            width: 100%;
+            max-width: 1200px;
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            padding: 20px;
+            box-sizing: border-box;
         }
         .header {
-            margin: 30px 0;
             text-align: center;
+            margin-bottom: 20px;
         }
         h1 {
-            color: #333;
-            margin-bottom: 10px;
+            margin: 0 0 10px 0;
+            color: #2c3e50;
+            font-size: 24px;
         }
         p {
-            color: #666;
             margin: 0;
+            color: #7f8c8d;
+            font-size: 14px;
         }
-        .chart-container {
-            width: 90%;
-            max-width: 1200px;
-            height: 600px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            background-color: #fff;
-            border-radius: 8px;
-            overflow: hidden;
+        .chart-wrapper {
+            position: relative;
+            height: 60vh;
+            min-height: 400px;
+            width: 100%;
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 18px;
+            color: #3498db;
+            font-weight: bold;
         }
     </style>
 </head>
 <body>
 
-    <div class="header">
-        <h1>TQQQ (ProShares UltraPro QQQ)</h1>
-        <p>1500일 이동평균선 설정을 통한 이격도 확인 차트</p>
+    <div class="widget-container">
+        <div class="header">
+            <h1>TQQQ Price & 1500-Day Disparity Index</h1>
+            <p>야후 파이낸스 API 기반 실시간 계산 차트 (파란선: 종가 / 붉은선: 1500일 이격도)</p>
+        </div>
+        
+        <div class="chart-wrapper">
+            <div id="loading">데이터를 불러오고 계산하는 중입니다...</div>
+            <canvas id="myChart"></canvas>
+        </div>
     </div>
 
-    <div class="chart-container">
-        <div class="tradingview-widget-container" style="height:100%;width:100%">
-          <div class="tradingview-widget-container__widget" style="height:calc(100% - 32px);width:100%"></div>
-          <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
-          {
-          "autosize": true,
-          "symbol": "NASDAQ:TQQQ",
-          "interval": "D",
-          "timezone": "Asia/Seoul",
-          "theme": "light",
-          "style": "1",
-          "locale": "kr",
-          "enable_publishing": false,
-          "backgroundColor": "#ffffff",
-          "gridColor": "rgba(240, 243, 250, 0)",
-          "hide_top_toolbar": false,
-          "hide_legend": false,
-          "save_image": false,
-          "container_id": "tradingview_tqqq",
-          "support_host": "https://www.tradingview.com",
-          "studies": [
-            "MASimple@tv-basicstudies"
-          ]
-        }
-          </script>
-        </div>
-        </div>
+    <script>
+        // 야후 파이낸스 API (CORS 우회를 위해 프록시 서버 사용)
+        // range=max 로 설정하여 TQQQ 상장(2010년)부터 현재까지의 모든 일봉 데이터를 가져옵니다.
+        const symbol = 'TQQQ';
+        const targetUrl = encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=max&interval=1d`);
+        const proxyUrl = `https://api.allorigins.win/raw?url=${targetUrl}`;
 
+        async function fetchAndRenderChart() {
+            try {
+                const response = await fetch(proxyUrl);
+                if (!response.ok) throw new Error('네트워크 응답에 문제가 있습니다.');
+                
+                const rawData = await response.json();
+                const result = rawData.chart.result[0];
+                
+                const timestamps = result.timestamp;
+                const closePrices = result.indicators.quote[0].close;
+
+                let dates = [];
+                let prices = [];
+                let disparityData = [];
+
+                // 1500일 이격도 계산을 위한 변수
+                const MA_PERIOD = 1500;
+
+                for (let i = 0; i < timestamps.length; i++) {
+                    const currentPrice = closePrices[i];
+                    
+                    // null 데이터 스킵 (휴장일 에러 방지)
+                    if (currentPrice === null || currentPrice === undefined) continue;
+
+                    // 날짜 변환
+                    const dateObj = new Date(timestamps[i] * 1000);
+                    const dateStr = dateObj.toISOString().split('T')[0];
+                    
+                    dates.push(dateStr);
+                    prices.push(currentPrice);
+
+                    // 1500일 이동평균 및 이격도 계산
+                    if (prices.length >= MA_PERIOD) {
+                        let sum = 0;
+                        // 최근 1500일의 종가 합산
+                        for (let j = 0; j < MA_PERIOD; j++) {
+                            sum += prices[prices.length - 1 - j];
+                        }
+                        const average = sum / MA_PERIOD;
+                        
+                        // 이격도 공식: (당일 종가 / 이동평균선) * 100
+                        const disparity = (currentPrice / average) * 100;
+                        disparityData.push(disparity);
+                    } else {
+                        // 1500일 이전의 데이터는 이격도 계산 불가
+                        disparityData.push(null);
+                    }
+                }
+
+                renderChart(dates, prices, disparityData);
+                document.getElementById('loading').style.display = 'none';
+
+            } catch (error) {
+                console.error('Data Fetch Error:', error);
+                document.getElementById('loading').innerText = '데이터를 불러오는 데 실패했습니다.';
+                document.getElementById('loading').style.color = 'red';
+            }
+        }
+
+        function renderChart(labels, priceData, disparityData) {
+            const ctx = document.getElementById('myChart').getContext('2d');
+            
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'TQQQ 종가 (USD)',
+                            data: priceData,
+                            borderColor: '#3498db',
+                            backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            yAxisID: 'y',
+                            tension: 0.1
+                        },
+                        {
+                            label: '1500일 이격도 (%)',
+                            data: disparityData,
+                            borderColor: '#e74c3c',
+                            backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            yAxisID: 'y1',
+                            tension: 0.1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        label += context.parsed.y.toFixed(2);
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { maxTicksLimit: 12 } // X축 날짜 라벨 텍스트가 겹치지 않게 조절
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: '주가 (USD)',
+                                color: '#3498db'
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: '이격도 (%)',
+                                color: '#e74c3c'
+                            },
+                            // 오른쪽 축의 그리드 라인이 왼쪽 축과 겹쳐서 지저분해지는 것을 방지
+                            grid: {
+                                drawOnChartArea: false 
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // 스크립트 실행
+        fetchAndRenderChart();
+    </script>
 </body>
 </html>
