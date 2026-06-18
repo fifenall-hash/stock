@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>주식 커스텀 분석 차트 및 최적화 계산기</title>
+    <title>주식 커스텀 분석 차트 및 최적화 계산기 (정밀 분석)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
@@ -212,11 +212,11 @@
 
     <div id="optimizer-modal" class="modal-overlay">
         <div class="modal-content">
-            <h2>📈 이격도 최적화 분석기</h2>
+            <h2>📈 이격도 최적화 분석기 (정밀)</h2>
             <div class="opt-chart-container">
                 <canvas id="optimizerChart"></canvas>
             </div>
-            <p id="opt-result-text" class="opt-result-text">수만 번의 시뮬레이션을 진행하고 있습니다...</p>
+            <p id="opt-result-text" class="opt-result-text">수백만 번의 시뮬레이션을 진행하고 있습니다...</p>
             <div class="modal-actions">
                 <button id="opt-apply-btn" class="btn btn-download" style="display:none; margin:0;" onclick="applyOptimization()">적용하기</button>
                 <button class="btn" style="margin:0;" onclick="closeOptimizer()">닫기</button>
@@ -458,7 +458,7 @@
                 }
             }
 
-            // 2. 물림일수 표기 필터링 (캐싱된 데이터 활용)
+            // 2. 물림일수 표기 필터링
             let displayMulrimData = new Array(N);
             for (let i = 0; i < N; i++) {
                 let futureDaysAvailable = (N - 1) - i;
@@ -603,7 +603,7 @@
             URL.revokeObjectURL(url);
         }
 
-        // --- 이격도 최적화 계산기 로직 ---
+        // --- 이격도 최적화 계산기 로직 (1일 단위 정밀 루프) ---
         function openOptimizer() {
             if (!cachedData) {
                 alert('먼저 데이터를 불러와주세요.');
@@ -611,13 +611,13 @@
             }
             document.getElementById('optimizer-modal').style.display = 'flex';
             document.getElementById('opt-apply-btn').style.display = 'none';
-            document.getElementById('opt-result-text').innerText = '최적의 기준 일수를 찾기 위해 시뮬레이션 중입니다...';
+            document.getElementById('opt-result-text').innerText = '최적의 기준 일수를 찾기 위해 수백만 번의 시뮬레이션 중입니다...';
 
             if (optChartInstance) {
                 optChartInstance.destroy();
             }
 
-            // UI 렌더링 후 연산이 시작되도록 약간의 지연시간을 줌
+            // 브라우저 렌더링 후 무거운 연산을 시작하도록 지연
             setTimeout(() => {
                 runOptimization();
             }, 100);
@@ -652,7 +652,7 @@
                 }
             }
 
-            if (validX.length < 30) return 0; // 신뢰도 확보를 위해 최소 30개 이상의 유효 데이터 쌍 요구
+            if (validX.length < 30) return 0; // 신뢰도 확보를 위해 최소 30개 쌍 요구
 
             let sumX = 0, sumY = 0;
             for (let i = 0; i < validX.length; i++) { sumX += validX[i]; sumY += validY[i]; }
@@ -677,11 +677,11 @@
 
         function runOptimization() {
             const N = cachedData.prices.length;
-            // R² 오버피팅을 막기 위해 테스트할 최대 일수 제한 (최소 30쌍 보장)
+            // R² 오버피팅을 막기 위해 테스트할 최대 일수 제한
             const maxAllowed = N - cachedData.maxMulrim - 30; 
             const maxTestPeriod = Math.min(3000, maxAllowed);
             
-            if (maxTestPeriod < 10) {
+            if (maxTestPeriod < 1) {
                 alert("상장 기간이 짧아 데이터를 충분히 확보할 수 없으므로 최적화를 수행할 수 없습니다.");
                 closeOptimizer();
                 return;
@@ -690,10 +690,10 @@
             let labels = [];
             let r2Data = [];
             let maxR2 = -1;
-            let bestPeriod = 10;
+            let bestPeriod = 1; // 1일부터 시작
 
-            // 10일부터 최대 3000일까지 10일 간격으로 고속 루프
-            for (let p = 10; p <= maxTestPeriod; p += 10) {
+            // 1일부터 최대 3000일까지 1일 간격으로 정밀 루프 실행
+            for (let p = 1; p <= maxTestPeriod; p += 1) {
                 let r2 = getFastR2ForPeriod(p);
                 labels.push(p);
                 r2Data.push(r2);
@@ -713,7 +713,7 @@
         function renderOptChart(labels, data, bestPeriod) {
             const ctx = document.getElementById('optimizerChart').getContext('2d');
             
-            // 가장 높은 R² 값의 포인트만 붉은색으로 강조
+            // 데이터가 수천 개이므로 최댓값(bestPeriod)인 지점에만 점을 그리고 나머지는 선으로만 표현
             let pointColors = labels.map(l => l === bestPeriod ? '#e74c3c' : '#3498db');
             let pointRadius = labels.map(l => l === bestPeriod ? 6 : 0);
 
