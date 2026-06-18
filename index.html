@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TQQQ 일봉 차트 및 1500일 이격도 (꽉 찬 화면)</title>
+    <title>TQQQ 차트 (이격도 + 1500일 이평선 + 볼린저밴드)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
@@ -40,8 +40,8 @@
         }
         .chart-wrapper {
             position: relative;
-            height: 50vh;
-            min-height: 400px;
+            height: 60vh;
+            min-height: 500px;
             width: 100%;
             margin-bottom: 20px;
         }
@@ -109,12 +109,12 @@
 
     <div class="widget-container">
         <div class="header">
-            <h1>TQQQ Price & 1500-Day Disparity Ratio</h1>
-            <p>액면분할 반영 일봉(Daily) 수정종가 (파란선: 주가 / 붉은선: 1500일 이격 배수)</p>
+            <h1>TQQQ Comprehensive Chart (1500-Day)</h1>
+            <p>수정종가(파란선), 1500일 이평선(노란선), 볼린저밴드(회색 점선), 이격도(붉은선)</p>
         </div>
         
         <div class="chart-wrapper">
-            <div id="loading">데이터를 분석하고 계산하는 중입니다...<br><span style="font-size:14px; color:#7f8c8d;">(최대 5초 정도 소요될 수 있습니다)</span></div>
+            <div id="loading">데이터를 분석하고 계산하는 중입니다...<br><span style="font-size:14px; color:#7f8c8d;">(수백만 번의 분산 연산이 진행되어 약간의 시간이 소요됩니다)</span></div>
             <canvas id="myChart"></canvas>
         </div>
 
@@ -128,6 +128,9 @@
                     <tr>
                         <th>날짜</th>
                         <th>수정종가 (USD)</th>
+                        <th>1500일 이평선</th>
+                        <th>BB 상한 (2σ)</th>
+                        <th>BB 하한 (2σ)</th>
                         <th>1500일 이격도 (배수)</th>
                     </tr>
                 </thead>
@@ -173,7 +176,13 @@
 
                 let dates = [];
                 let prices = [];
+                
+                // 추가된 지표 데이터를 담을 배열들
+                let smaData = [];
+                let upperBBData = [];
+                let lowerBBData = [];
                 let disparityData = [];
+                
                 let validDisparities = [];
                 
                 const MA_PERIOD = 1500;
@@ -198,11 +207,28 @@
                     }
 
                     if (windowPrices.length === MA_PERIOD) {
+                        // 1. 이동평균선(SMA) 계산
                         const sum = windowPrices.reduce((a, b) => a + b, 0);
                         const average = sum / MA_PERIOD;
                         
+                        // 2. 표준편차 계산 (볼린저밴드용)
+                        let sqSum = 0;
+                        for (let j = 0; j < MA_PERIOD; j++) {
+                            sqSum += Math.pow(windowPrices[j] - average, 2);
+                        }
+                        const stdDev = Math.sqrt(sqSum / MA_PERIOD);
+                        
+                        // 3. 볼린저밴드 상한/하한 계산 (표준편차 2배)
+                        const upperBand = average + (2 * stdDev);
+                        // 로그스케일 차트에서는 값이 음수가 되면 렌더링 에러가 발생하므로, 하한선이 0 이하로 내려갈 경우를 대비해 최솟값을 0.0001로 방어 처리
+                        const lowerBand = Math.max(average - (2 * stdDev), 0.0001); 
+
                         if (average > 0) {
                             const disparity = currentPrice / average; 
+                            
+                            smaData.push(average);
+                            upperBBData.push(upperBand);
+                            lowerBBData.push(lowerBand);
                             
                             if (Number.isFinite(disparity)) {
                                 disparityData.push(disparity);
@@ -211,14 +237,19 @@
                                 disparityData.push(null);
                             }
                         } else {
+                            smaData.push(null);
+                            upperBBData.push(null);
+                            lowerBBData.push(null);
                             disparityData.push(null);
                         }
                     } else {
+                        smaData.push(null);
+                        upperBBData.push(null);
+                        lowerBBData.push(null);
                         disparityData.push(null);
                     }
                 }
 
-                // 이격도의 최댓값과 최솟값을 정확하게 추출
                 let maxDisparityValue = 5;
                 let minDisparityValue = 0;
                 
@@ -227,9 +258,8 @@
                     minDisparityValue = Math.min(...validDisparities);
                 }
 
-                // 추출한 최댓값과 최솟값을 렌더링 함수로 전달
-                renderChart(dates, prices, disparityData, maxDisparityValue, minDisparityValue);
-                populateTable(dates, prices, disparityData);
+                renderChart(dates, prices, smaData, upperBBData, lowerBBData, disparityData, maxDisparityValue, minDisparityValue);
+                populateTable(dates, prices, smaData, upperBBData, lowerBBData, disparityData);
                 document.getElementById('loading').style.display = 'none';
 
             } catch (error) {
@@ -239,7 +269,7 @@
             }
         }
 
-        function renderChart(labels, priceData, disparityData, maxDisp, minDisp) {
+        function renderChart(labels, priceData, smaData, upperBBData, lowerBBData, disparityData, maxDisp, minDisp) {
             const ctx = document.getElementById('myChart').getContext('2d');
             
             if (window.myLineChart) {
@@ -252,25 +282,61 @@
                     labels: labels,
                     datasets: [
                         {
-                            label: 'TQQQ 일봉 수정종가 (로그스케일)',
+                            label: 'TQQQ 수정종가 (로그스케일)',
                             data: priceData,
-                            borderColor: '#3498db',
+                            borderColor: '#3498db', // 파란색
                             backgroundColor: 'rgba(52, 152, 219, 0.1)',
-                            borderWidth: 1.5,
+                            borderWidth: 2,
                             pointRadius: 0,
                             yAxisID: 'y',
-                            tension: 0.1
+                            tension: 0.1,
+                            order: 1 // 선이 겹칠 때 위에 오도록 순서 설정
+                        },
+                        {
+                            label: '1500일 이동평균선',
+                            data: smaData,
+                            borderColor: '#f1c40f', // 노란색(주황빛)
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            yAxisID: 'y',
+                            tension: 0.1,
+                            spanGaps: true,
+                            order: 3
+                        },
+                        {
+                            label: '볼린저밴드 상한 (2σ)',
+                            data: upperBBData,
+                            borderColor: '#95a5a6', // 회색
+                            borderWidth: 1.5,
+                            borderDash: [5, 5], // 점선 처리
+                            pointRadius: 0,
+                            yAxisID: 'y',
+                            tension: 0.1,
+                            spanGaps: true,
+                            order: 4
+                        },
+                        {
+                            label: '볼린저밴드 하한 (2σ)',
+                            data: lowerBBData,
+                            borderColor: '#95a5a6', // 회색
+                            borderWidth: 1.5,
+                            borderDash: [5, 5], // 점선 처리
+                            pointRadius: 0,
+                            yAxisID: 'y',
+                            tension: 0.1,
+                            spanGaps: true,
+                            order: 5
                         },
                         {
                             label: '1500일 이격 비율 (배수)',
                             data: disparityData,
-                            borderColor: '#e74c3c', 
-                            backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                            borderColor: '#e74c3c', // 붉은색
                             borderWidth: 2, 
                             pointRadius: 0,
                             yAxisID: 'y1',
                             tension: 0.1,
-                            spanGaps: true
+                            spanGaps: true,
+                            order: 2
                         }
                     ]
                 },
@@ -288,7 +354,8 @@
                                     let label = context.dataset.label || '';
                                     if (label) label += ': ';
                                     if (context.parsed.y !== null) {
-                                        if (context.datasetIndex === 1) {
+                                        // 이격도인 경우(우측 y1축) x를 붙임
+                                        if (context.dataset.yAxisID === 'y1') {
                                             label += context.parsed.y.toFixed(2) + 'x';
                                         } else {
                                             label += context.parsed.y.toFixed(2);
@@ -308,7 +375,7 @@
                             type: 'logarithmic',
                             display: true,
                             position: 'left',
-                            title: { display: true, text: '수정종가 (USD)', color: '#3498db' }
+                            title: { display: true, text: '수정종가 및 지표 (USD)', color: '#3498db' }
                         },
                         y1: {
                             type: 'linear',
@@ -316,7 +383,6 @@
                             position: 'right',
                             title: { display: true, text: '이격 비율 (현재가 / 1500일 평균)', color: '#e74c3c' },
                             grid: { drawOnChartArea: false },
-                            // 우측 Y축의 범위를 실제 데이터의 최솟값과 최댓값으로 강제 지정하여 바닥과 천장에 닿게 함
                             min: minDisp, 
                             max: maxDisp 
                         }
@@ -325,19 +391,26 @@
             });
         }
 
-        function populateTable(dates, prices, disparityData) {
+        function populateTable(dates, prices, smaData, upperBBData, lowerBBData, disparityData) {
             const tableBody = document.getElementById('table-body');
             let htmlContent = '';
 
             for (let i = dates.length - 1; i >= 0; i--) {
                 const date = dates[i];
                 const price = prices[i] ? prices[i].toFixed(4) : 'N/A';
+                
+                const sma = smaData[i] !== null ? smaData[i].toFixed(4) : '-';
+                const upperBB = upperBBData[i] !== null ? upperBBData[i].toFixed(4) : '-';
+                const lowerBB = lowerBBData[i] !== null ? lowerBBData[i].toFixed(4) : '-';
                 const disparity = disparityData[i] !== null ? disparityData[i].toFixed(4) : '<span style="color:#999;">데이터 부족(1500일 미만)</span>';
 
                 htmlContent += `
                     <tr>
                         <td>${date}</td>
                         <td>${price}</td>
+                        <td>${sma}</td>
+                        <td>${upperBB}</td>
+                        <td>${lowerBB}</td>
                         <td>${disparity}</td>
                     </tr>
                 `;
