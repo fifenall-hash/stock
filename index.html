@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>주식 커스텀 분석 차트 (평균 이격도 역산 포함)</title>
+    <title>주식 커스텀 분석 차트 (국장 지원 및 최적화)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
@@ -56,14 +56,17 @@
             display: flex;
             align-items: center;
         }
-        .control-panel input {
-            width: 70px;
+        .control-panel input, .control-panel select {
             padding: 6px;
             margin-left: 8px;
             border: 1px solid #ced4da;
             border-radius: 4px;
             text-align: center;
             font-size: 14px;
+            color: #2c3e50;
+        }
+        .control-panel input[type="number"] {
+            width: 70px;
         }
         #ticker-input {
             width: 90px;
@@ -227,11 +230,18 @@
     <div class="widget-container">
         <div class="header">
             <h1 id="main-title">TQQQ Custom Analytics</h1>
-            <p>원하는 티커와 기준 일수, 볼린저밴드 표준편차를 자유롭게 설정해 보세요.</p>
+            <p>미국 주식은 티커명, 한국 주식은 6자리 숫자 코드를 입력해 보세요.</p>
         </div>
 
         <div class="control-panel">
-            <label>티커 <input type="text" id="ticker-input" value="TQQQ"></label>
+            <label>시장
+                <select id="market-select">
+                    <option value="">미국</option>
+                    <option value=".KS">한국(코스피)</option>
+                    <option value=".KQ">한국(코스닥)</option>
+                </select>
+            </label>
+            <label>티커/코드 <input type="text" id="ticker-input" value="TQQQ"></label>
             <label>기준 일수 <input type="number" id="ma-period" value="1500" min="1"></label>
             <label>상한선 (+) <input type="number" id="upper-mult" step="0.1" value="3.0"></label>
             <label>하한선 (-) <input type="number" id="lower-mult" step="0.1" value="0.5"></label>
@@ -261,7 +271,7 @@
                 <thead>
                     <tr>
                         <th>날짜</th>
-                        <th>수정종가 (USD)</th>
+                        <th>수정종가</th>
                         <th>물림일수 (일)</th>
                         <th id="th-sma">N일 이평선</th>
                         <th id="th-upper-bb">BB 상한</th>
@@ -282,11 +292,18 @@
         let bestOptimizedPeriod = 1500;
 
         async function handleRenderClick() {
-            const inputTicker = document.getElementById('ticker-input').value.trim().toUpperCase();
+            let rawTicker = document.getElementById('ticker-input').value.trim().toUpperCase();
+            const marketSuffix = document.getElementById('market-select').value;
             
-            if (!inputTicker) {
-                alert('티커명을 입력해주세요.');
+            if (!rawTicker) {
+                alert('티커명 혹은 6자리 종목코드를 입력해주세요.');
                 return;
+            }
+
+            // 국장 선택 시 숫자로만 입력했다면 자동으로 접미사(.KS, .KQ) 붙여주기
+            let inputTicker = rawTicker;
+            if (marketSuffix !== "" && !rawTicker.includes(".")) {
+                inputTicker = rawTicker + marketSuffix;
             }
 
             if (inputTicker !== cachedTicker) {
@@ -378,12 +395,12 @@
 
             } catch (error) {
                 console.error(error);
-                loadingEl.innerHTML = `[${ticker}] 데이터를 찾을 수 없거나 통신에 실패했습니다.<br><span style="font-size:14px;">상장폐지 여부나 티커명을 다시 확인해 주세요.</span>`;
+                loadingEl.innerHTML = `[${ticker}] 데이터를 찾을 수 없거나 통신에 실패했습니다.<br><span style="font-size:14px;">상장폐지 여부나 종목코드를 다시 확인해 주세요. (한국 주식은 '종목명' 대신 '종목코드 6자리' 입력 필요)</span>`;
                 loadingEl.style.color = '#e74c3c';
                 
                 setTimeout(() => {
                     loadingEl.style.display = 'none';
-                }, 3000);
+                }, 4000);
             }
         }
 
@@ -462,9 +479,9 @@
 
             for (let i = 0; i < N; i++) {
                 if (disparityData[i] !== null) {
-                    disparityBaseLineData.push(1.0); // 이평선 1배 라인
-                    disparityAvgLineData.push(avgDisparity); // 평균 이격도 가로선
-                    priceAvgDisparityLineData.push(smaData[i] * avgDisparity); // 평균 이격도 기준 가격
+                    disparityBaseLineData.push(1.0); 
+                    disparityAvgLineData.push(avgDisparity); 
+                    priceAvgDisparityLineData.push(smaData[i] * avgDisparity); 
                 } else {
                     disparityBaseLineData.push(null);
                     disparityAvgLineData.push(null);
@@ -472,7 +489,7 @@
                 }
             }
 
-            // 2. 물림일수 필터링
+            // 2. 물림일수 표기 필터링
             let displayMulrimData = new Array(N);
             for (let i = 0; i < N; i++) {
                 let futureDaysAvailable = (N - 1) - i;
@@ -522,7 +539,7 @@
 
             let maxDisp = 5, minDisp = 0;
             if (validDisparities.length > 0) {
-                maxDisp = Math.max(...validDisparities, 1.0, avgDisparity); // 기준선과 평균선이 잘리지 않도록 확보
+                maxDisp = Math.max(...validDisparities, 1.0, avgDisparity);
                 minDisp = Math.min(...validDisparities, 1.0, avgDisparity);
             }
 
@@ -551,7 +568,6 @@
                 evalPanel.style.display = 'block';
             }
 
-            // 렌더링 호출 (새로 생성한 데이터 배열들 전달)
             renderPriceChart(cachedData.dates, cachedData.prices, smaData, upperBBData, lowerBBData, priceAvgDisparityLineData, avgDisparity, period, upperMult, lowerMult);
             renderDisparityChart(cachedData.dates, disparityData, disparityBaseLineData, disparityAvgLineData, avgDisparity, maxDisp, minDisp, period);
             populateTable(cachedData.dates, cachedData.prices, displayMulrimData, smaData, upperBBData, lowerBBData, disparityData, period);
@@ -572,7 +588,7 @@
                         { label: `BB 하한 (${lowerMult}σ)`, data: lowerBBData, borderColor: '#95a5a6', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 5 }
                     ]
                 },
-                options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } }, y: { type: 'logarithmic', display: true, position: 'left', title: { display: true, text: '가격 (USD, 로그스케일)', color: '#333' } } } }
+                options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } }, y: { type: 'logarithmic', display: true, position: 'left', title: { display: true, text: '가격 (로그스케일)', color: '#333' } } } }
             });
         }
 
