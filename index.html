@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>주식 커스텀 분석 차트</title>
+    <title>주식 커스텀 분석 차트 (연도별 세로선 적용)</title>
     
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#2c3e50">
@@ -299,7 +299,6 @@
     </div>
 
     <script>
-        // PWA 서비스 워커 등록
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./sw.js').catch(err => {
@@ -308,7 +307,6 @@
             });
         }
 
-        // 기존 자바스크립트 로직 동일
         let cachedTicker = '';
         let cachedCompanyName = 'TQQQ';
         let cachedData = null;
@@ -551,6 +549,41 @@
             populateTable(cachedData.dates, cachedData.prices, displayMulrimData, smaData, upperBBData, lowerBBData, disparityData, period);
         }
 
+        // 공통 X축 눈금 설정 함수: 매년 1월 1일과 근접한 첫 거래일 찾기
+        function getYearlyTicksConfig() {
+            return {
+                autoSkip: false,
+                maxRotation: 0,
+                callback: function(val, index) {
+                    const currentLabel = this.getLabelForValue(val);
+                    if (index === 0) return currentLabel;
+                    const prevLabel = this.getLabelForValue(val - 1);
+                    const currYear = currentLabel.substring(0, 4);
+                    const prevYear = prevLabel.substring(0, 4);
+                    
+                    // 연도가 바뀌는 첫 번째 데이터 포인트에만 연도를 반환
+                    if (currYear !== prevYear) {
+                        return currYear + '-01'; 
+                    }
+                    return null;
+                }
+            };
+        }
+
+        // 공통 X축 세로선(Grid) 설정 함수: 매년 1월 첫 거래일만 옅은 회색 선 긋기
+        function getYearlyGridConfig() {
+            return {
+                display: true,
+                drawOnChartArea: true,
+                color: function(context) {
+                    if (context.tick.label) {
+                        return 'rgba(200, 200, 200, 0.4)'; // 옅은 회색 선
+                    }
+                    return 'rgba(0,0,0,0)'; // 그 외 날짜는 투명
+                }
+            };
+        }
+
         function renderPriceChart(labels, priceData, smaData, upperBBData, lowerBBData, priceAvgLineData, avgDisparity, period, upperMult, lowerMult) {
             const ctx = document.getElementById('priceChart').getContext('2d');
             if (window.priceChartInstance) window.priceChartInstance.destroy();
@@ -566,7 +599,23 @@
                         { label: `BB 하한 (${lowerMult}σ)`, data: lowerBBData, borderColor: '#95a5a6', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 5 }
                     ]
                 },
-                options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } }, y: { type: 'logarithmic', display: true, position: 'left', title: { display: true, text: '가격(로그)', color: '#333' } } } }
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    interaction: { mode: 'index', intersect: false }, 
+                    scales: { 
+                        x: { 
+                            grid: getYearlyGridConfig(), 
+                            ticks: getYearlyTicksConfig() 
+                        }, 
+                        y: { 
+                            type: 'logarithmic', 
+                            display: true, 
+                            position: 'left', 
+                            title: { display: true, text: '가격(로그)', color: '#333' } 
+                        } 
+                    } 
+                }
             });
         }
 
@@ -585,7 +634,25 @@
                         { label: `BB 이격 하한 (${lowerMult}σ)`, data: lowerBBDisparityData, borderColor: '#95a5a6', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 5 }
                     ]
                 },
-                options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } }, y: { type: 'linear', display: true, position: 'right', title: { display: true, text: '이격 비율', color: '#3498db' }, min: minDisp, max: maxDisp } } }
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    interaction: { mode: 'index', intersect: false }, 
+                    scales: { 
+                        x: { 
+                            grid: getYearlyGridConfig(), 
+                            ticks: getYearlyTicksConfig() 
+                        }, 
+                        y: { 
+                            type: 'linear', 
+                            display: true, 
+                            position: 'right', 
+                            title: { display: true, text: '이격 비율', color: '#3498db' }, 
+                            min: minDisp, 
+                            max: maxDisp 
+                        } 
+                    } 
+                }
             });
         }
 
