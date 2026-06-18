@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>주식 커스텀 분석 차트 및 최적화 계산기 (정밀 분석)</title>
+    <title>주식 커스텀 분석 차트 및 최적화 계산기 (추세선 예측 포함)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
@@ -20,7 +20,7 @@
             max-width: 1200px;
             background: #ffffff;
             border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
             padding: 20px;
             box-sizing: border-box;
         }
@@ -110,18 +110,18 @@
             background-color: #e8f4f8;
             border: 1px solid #bce8f1;
             color: #31708f;
-            padding: 15px;
+            padding: 20px;
             border-radius: 8px;
             text-align: center;
             font-size: 18px;
             font-weight: bold;
             margin-bottom: 20px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-            line-height: 1.6;
+            line-height: 1.8;
         }
         .eval-highlight {
             color: #e74c3c;
-            font-size: 20px;
+            font-size: 22px;
             margin: 0 5px;
         }
         .eval-sub {
@@ -348,7 +348,6 @@
                     prices.push(currentPrice);
                 }
 
-                // 속도 최적화: 물림일수(rawMulrimData)와 최댓값을 데이터를 불러올 때 최초 1번만 캐싱
                 const N = prices.length;
                 let rawMulrimData = new Array(N).fill(0);
                 let maxMulrim = 0;
@@ -412,14 +411,11 @@
             const maxMulrim = cachedData.maxMulrim;
             const rawMulrimData = cachedData.rawMulrimData;
 
-            // 1. 이평선, 볼린저밴드, 이격도 계산
             for (let i = 0; i < N; i++) {
                 const currentPrice = cachedData.prices[i];
                 windowPrices.push(currentPrice);
 
-                if (windowPrices.length > period) {
-                    windowPrices.shift();
-                }
+                if (windowPrices.length > period) windowPrices.shift();
 
                 if (windowPrices.length === period) {
                     const sum = windowPrices.reduce((a, b) => a + b, 0);
@@ -445,20 +441,13 @@
                             disparityData.push(null);
                         }
                     } else {
-                        smaData.push(null);
-                        upperBBData.push(null);
-                        lowerBBData.push(null);
-                        disparityData.push(null);
+                        smaData.push(null); upperBBData.push(null); lowerBBData.push(null); disparityData.push(null);
                     }
                 } else {
-                    smaData.push(null);
-                    upperBBData.push(null);
-                    lowerBBData.push(null);
-                    disparityData.push(null);
+                    smaData.push(null); upperBBData.push(null); lowerBBData.push(null); disparityData.push(null);
                 }
             }
 
-            // 2. 물림일수 표기 필터링
             let displayMulrimData = new Array(N);
             for (let i = 0; i < N; i++) {
                 let futureDaysAvailable = (N - 1) - i;
@@ -469,10 +458,13 @@
                 }
             }
 
-            // 3. 이격도와 물림일수 간의 R² 계산
+            // 회귀분석(Regression) 기반 추세선 계산 및 R² 산출
             let rSquared = 0;
+            let slope = 0;
+            let intercept = 0;
             let validX = [];
             let validY = [];
+
             for (let i = 0; i < N; i++) {
                 if (disparityData[i] !== null && displayMulrimData[i] !== "데이터 부족") {
                     validX.push(disparityData[i]);
@@ -498,6 +490,9 @@
                 if (varX > 0 && varY > 0) {
                     let r = covXY / Math.sqrt(varX * varY);
                     rSquared = r * r;
+                    // 선형 회귀 추세선의 기울기(m)와 절편(b)
+                    slope = covXY / varX;
+                    intercept = meanY - slope * meanX;
                 }
             }
 
@@ -507,23 +502,30 @@
                 minDisp = Math.min(...validDisparities);
             }
 
+            // 패널 업데이트
             const evalPanel = document.getElementById('evaluation-panel');
             if (validDisparities.length > 0) {
                 const latestDate = cachedData.dates[cachedData.dates.length - 1];
                 const latestDisparity = validDisparities[validDisparities.length - 1];
                 
+                // 위험도(%) 계산
                 let riskLevel = 0;
                 if (maxDisp > minDisp) {
                     riskLevel = ((latestDisparity - minDisp) / (maxDisp - minDisp)) * 100;
                 }
 
-                evalPanel.innerHTML = `오늘의 평가 (${latestDate})<br>` +
-                                      `이격 비율 : <span class="eval-highlight">${latestDisparity.toFixed(2)}x</span> / ` +
+                // 회귀방정식을 이용한 예상 물림일수 산출
+                let expectedMulrim = slope * latestDisparity + intercept;
+                expectedMulrim = Math.max(0, Math.round(expectedMulrim)) || 0; // 음수 방지 및 정수형 변환
+
+                evalPanel.innerHTML = `오늘의 평가 (${latestDate})<br><br>` +
+                                      `이격 비율 : <span class="eval-highlight">${latestDisparity.toFixed(2)}x</span> &nbsp;|&nbsp; ` +
                                       `위험도 : <span class="eval-highlight">${riskLevel.toFixed(1)}%</span> <span class="eval-sub">(0%에 가까울수록 매수 권장)</span><br>` +
-                                      `<span style="font-size:16px; color:#555; display:inline-block; margin-top:8px;">기준일수 : ${period} / R² = ${rSquared.toFixed(4)}</span>`;
+                                      `추세선(회귀분석) 기반 예상 물림일수 : <span class="eval-highlight">약 ${expectedMulrim}일</span><br>` +
+                                      `<span style="font-size:15px; color:#7f8c8d; display:inline-block; margin-top:12px;">기준일수 : ${period}일 / R² (결정계수) : ${rSquared.toFixed(4)}</span>`;
                 evalPanel.style.display = 'block';
             } else {
-                evalPanel.innerHTML = `오늘의 평가 : 기준 일수(${period}일)가 전체 상장 기간보다 길어 산정할 수 없습니다.`;
+                evalPanel.innerHTML = `오늘의 평가 : 기준 일수(${period}일)가 상장 기간보다 길어 산정할 수 없습니다.`;
                 evalPanel.style.display = 'block';
             }
 
@@ -617,7 +619,7 @@
                 optChartInstance.destroy();
             }
 
-            // 브라우저 렌더링 후 무거운 연산을 시작하도록 지연
+            // 브라우저 렌더링 후 연산을 시작하도록 지연
             setTimeout(() => {
                 runOptimization();
             }, 100);
@@ -652,7 +654,7 @@
                 }
             }
 
-            if (validX.length < 30) return 0; // 신뢰도 확보를 위해 최소 30개 쌍 요구
+            if (validX.length < 30) return 0; 
 
             let sumX = 0, sumY = 0;
             for (let i = 0; i < validX.length; i++) { sumX += validX[i]; sumY += validY[i]; }
@@ -677,7 +679,6 @@
 
         function runOptimization() {
             const N = cachedData.prices.length;
-            // R² 오버피팅을 막기 위해 테스트할 최대 일수 제한
             const maxAllowed = N - cachedData.maxMulrim - 30; 
             const maxTestPeriod = Math.min(3000, maxAllowed);
             
@@ -690,9 +691,8 @@
             let labels = [];
             let r2Data = [];
             let maxR2 = -1;
-            let bestPeriod = 1; // 1일부터 시작
+            let bestPeriod = 1; 
 
-            // 1일부터 최대 3000일까지 1일 간격으로 정밀 루프 실행
             for (let p = 1; p <= maxTestPeriod; p += 1) {
                 let r2 = getFastR2ForPeriod(p);
                 labels.push(p);
@@ -713,7 +713,6 @@
         function renderOptChart(labels, data, bestPeriod) {
             const ctx = document.getElementById('optimizerChart').getContext('2d');
             
-            // 데이터가 수천 개이므로 최댓값(bestPeriod)인 지점에만 점을 그리고 나머지는 선으로만 표현
             let pointColors = labels.map(l => l === bestPeriod ? '#e74c3c' : '#3498db');
             let pointRadius = labels.map(l => l === bestPeriod ? 6 : 0);
 
