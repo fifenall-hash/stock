@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>주식 커스텀 분석 차트 및 데이터 다운로드</title>
+    <title>주식 커스텀 분석 차트 및 최적화 계산기</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
@@ -71,6 +71,11 @@
             font-weight: bold;
             color: #e74c3c;
         }
+        .btn-group {
+            width: 100%;
+            text-align: center;
+            margin-top: 5px;
+        }
         .btn {
             background-color: #2c3e50;
             color: white;
@@ -80,9 +85,16 @@
             border-radius: 6px;
             cursor: pointer;
             transition: background-color 0.3s;
+            margin: 0 5px;
         }
         .btn:hover {
             background-color: #1a252f;
+        }
+        .btn-optimize {
+            background-color: #8e44ad;
+        }
+        .btn-optimize:hover {
+            background-color: #732d91;
         }
         .btn-download {
             background-color: #27ae60;
@@ -150,15 +162,67 @@
         .btn-container {
             text-align: center;
         }
-        /* 다운로드용 데이터를 보관하는 테이블 (화면에는 숨김) */
         #table-container {
             display: none;
+        }
+
+        /* 최적화 모달창 CSS */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+        }
+        .modal-content {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 800px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+        .opt-chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        .opt-result-text {
+            font-size: 18px;
+            font-weight: bold;
+            margin: 20px 0;
+            color: #2c3e50;
+            line-height: 1.5;
+        }
+        .modal-actions {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 15px;
         }
     </style>
 </head>
 <body>
 
     <div id="loading">데이터를 불러오는 중입니다...</div>
+
+    <div id="optimizer-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2>📈 이격도 최적화 분석기</h2>
+            <div class="opt-chart-container">
+                <canvas id="optimizerChart"></canvas>
+            </div>
+            <p id="opt-result-text" class="opt-result-text">수만 번의 시뮬레이션을 진행하고 있습니다...</p>
+            <div class="modal-actions">
+                <button id="opt-apply-btn" class="btn btn-download" style="display:none; margin:0;" onclick="applyOptimization()">적용하기</button>
+                <button class="btn" style="margin:0;" onclick="closeOptimizer()">닫기</button>
+            </div>
+        </div>
+    </div>
 
     <div class="widget-container">
         <div class="header">
@@ -171,7 +235,11 @@
             <label>기준 일수 <input type="number" id="ma-period" value="1500" min="1"></label>
             <label>상한선 (+) <input type="number" id="upper-mult" step="0.1" value="3.0"></label>
             <label>하한선 (-) <input type="number" id="lower-mult" step="0.1" value="0.5"></label>
-            <button class="btn" onclick="handleRenderClick()">차트 불러오기 및 재계산</button>
+            
+            <div class="btn-group">
+                <button class="btn" onclick="handleRenderClick()">차트 불러오기 및 재계산</button>
+                <button class="btn btn-optimize" onclick="openOptimizer()">💡 이격도 최적화 계산기</button>
+            </div>
         </div>
 
         <div id="evaluation-panel" class="evaluation-panel"></div>
@@ -210,6 +278,8 @@
     <script>
         let cachedTicker = '';
         let cachedData = null;
+        let optChartInstance = null;
+        let bestOptimizedPeriod = 1500;
 
         async function handleRenderClick() {
             const inputTicker = document.getElementById('ticker-input').value.trim().toUpperCase();
@@ -278,7 +348,28 @@
                     prices.push(currentPrice);
                 }
 
-                cachedData = { dates: dates, prices: prices };
+                // 속도 최적화: 물림일수(rawMulrimData)와 최댓값을 데이터를 불러올 때 최초 1번만 캐싱
+                const N = prices.length;
+                let rawMulrimData = new Array(N).fill(0);
+                let maxMulrim = 0;
+                for (let i = 0; i < N; i++) {
+                    let count = 0;
+                    let currentPrice = prices[i];
+                    for (let j = i + 1; j < N; j++) {
+                        if (prices[j] < currentPrice) {
+                            count++;
+                        }
+                    }
+                    rawMulrimData[i] = count;
+                    if (count > maxMulrim) maxMulrim = count;
+                }
+
+                cachedData = { 
+                    dates: dates, 
+                    prices: prices,
+                    rawMulrimData: rawMulrimData,
+                    maxMulrim: maxMulrim
+                };
                 cachedTicker = ticker;
 
                 document.getElementById('main-title').innerText = `${ticker} Custom Analytics`;
@@ -297,6 +388,7 @@
             }
         }
 
+        // --- 메인 분석 및 렌더링 로직 ---
         function calculateAndRender() {
             if (!cachedData) return;
 
@@ -317,6 +409,8 @@
             let windowPrices = [];
 
             const N = cachedData.prices.length;
+            const maxMulrim = cachedData.maxMulrim;
+            const rawMulrimData = cachedData.rawMulrimData;
 
             // 1. 이평선, 볼린저밴드, 이격도 계산
             for (let i = 0; i < N; i++) {
@@ -364,24 +458,7 @@
                 }
             }
 
-            // 2. 물림일수(COUNTIF 방식) 계산 및 최댓값 도출
-            let rawMulrimData = new Array(N).fill(0);
-            let maxMulrim = 0;
-            for (let i = 0; i < N; i++) {
-                let count = 0;
-                let currentPrice = cachedData.prices[i];
-                for (let j = i + 1; j < N; j++) {
-                    if (cachedData.prices[j] < currentPrice) {
-                        count++;
-                    }
-                }
-                rawMulrimData[i] = count;
-                if (count > maxMulrim) {
-                    maxMulrim = count;
-                }
-            }
-
-            // 3. 물림일수 표기 필터링
+            // 2. 물림일수 표기 필터링 (캐싱된 데이터 활용)
             let displayMulrimData = new Array(N);
             for (let i = 0; i < N; i++) {
                 let futureDaysAvailable = (N - 1) - i;
@@ -392,7 +469,7 @@
                 }
             }
 
-            // 4. 이격도와 물림일수 간의 R² 계산
+            // 3. 이격도와 물림일수 간의 R² 계산
             let rSquared = 0;
             let validX = [];
             let validY = [];
@@ -405,10 +482,7 @@
 
             if (validX.length > 1) {
                 let sumX = 0, sumY = 0;
-                for (let i = 0; i < validX.length; i++) {
-                    sumX += validX[i];
-                    sumY += validY[i];
-                }
+                for (let i = 0; i < validX.length; i++) { sumX += validX[i]; sumY += validY[i]; }
                 let meanX = sumX / validX.length;
                 let meanY = sumY / validY.length;
 
@@ -427,14 +501,12 @@
                 }
             }
 
-            // 이격도 Y축 범위
             let maxDisp = 5, minDisp = 0;
             if (validDisparities.length > 0) {
                 maxDisp = Math.max(...validDisparities);
                 minDisp = Math.min(...validDisparities);
             }
 
-            // 오늘의 평가 및 R² 패널 업데이트
             const evalPanel = document.getElementById('evaluation-panel');
             if (validDisparities.length > 0) {
                 const latestDate = cachedData.dates[cachedData.dates.length - 1];
@@ -455,19 +527,14 @@
                 evalPanel.style.display = 'block';
             }
 
-            // 차트 렌더링
             renderPriceChart(cachedData.dates, cachedData.prices, smaData, upperBBData, lowerBBData, period, upperMult, lowerMult);
             renderDisparityChart(cachedData.dates, disparityData, maxDisp, minDisp, period);
-            
-            // CSV 다운로드를 위한 백그라운드 표 생성 (화면엔 안보임)
             populateTable(cachedData.dates, cachedData.prices, displayMulrimData, smaData, upperBBData, lowerBBData, disparityData, period);
         }
 
-        // 1. 메인 차트
         function renderPriceChart(labels, priceData, smaData, upperBBData, lowerBBData, period, upperMult, lowerMult) {
             const ctx = document.getElementById('priceChart').getContext('2d');
             if (window.priceChartInstance) window.priceChartInstance.destroy();
-            
             window.priceChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
@@ -479,44 +546,26 @@
                         { label: `BB 하한 (${lowerMult}σ)`, data: lowerBBData, borderColor: '#95a5a6', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 4 }
                     ]
                 },
-                options: {
-                    responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-                    scales: {
-                        x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } },
-                        y: { type: 'logarithmic', display: true, position: 'left', title: { display: true, text: '가격 (USD, 로그스케일)', color: '#333' } }
-                    }
-                }
+                options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } }, y: { type: 'logarithmic', display: true, position: 'left', title: { display: true, text: '가격 (USD, 로그스케일)', color: '#333' } } } }
             });
         }
 
-        // 2. 서브 차트 (이격도)
         function renderDisparityChart(labels, disparityData, maxDisp, minDisp, period) {
             const ctx = document.getElementById('disparityChart').getContext('2d');
             if (window.disparityChartInstance) window.disparityChartInstance.destroy();
-            
             window.disparityChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: labels,
-                    datasets: [
-                        { label: `${period}일 이격 비율 (배수)`, data: disparityData, borderColor: '#e74c3c', backgroundColor: 'rgba(231, 76, 60, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, fill: true }
-                    ]
+                    datasets: [ { label: `${period}일 이격 비율 (배수)`, data: disparityData, borderColor: '#e74c3c', backgroundColor: 'rgba(231, 76, 60, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, fill: true } ]
                 },
-                options: {
-                    responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-                    scales: {
-                        x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } },
-                        y: { type: 'linear', display: true, position: 'right', title: { display: true, text: '이격 비율 (현재가/이평선)', color: '#e74c3c' }, min: minDisp, max: maxDisp }
-                    }
-                }
+                options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } }, y: { type: 'linear', display: true, position: 'right', title: { display: true, text: '이격 비율 (현재가/이평선)', color: '#e74c3c' }, min: minDisp, max: maxDisp } } }
             });
         }
 
-        // 3. 백그라운드 테이블 구성 로직 (CSV 생성용)
         function populateTable(dates, prices, displayMulrimData, smaData, upperBBData, lowerBBData, disparityData, period) {
             const tableBody = document.getElementById('table-body');
             let htmlContent = '';
-
             for (let i = dates.length - 1; i >= 0; i--) {
                 const date = dates[i];
                 const price = prices[i] ? prices[i].toFixed(4) : 'N/A';
@@ -525,47 +574,26 @@
                 const upperBB = upperBBData[i] !== null ? upperBBData[i].toFixed(4) : '-';
                 const lowerBB = lowerBBData[i] !== null ? lowerBBData[i].toFixed(4) : '-';
                 const disparity = disparityData[i] !== null ? disparityData[i].toFixed(4) : '데이터 부족';
-
-                htmlContent += `
-                    <tr>
-                        <td>${date}</td>
-                        <td>${price}</td>
-                        <td>${mulrim}</td>
-                        <td>${sma}</td>
-                        <td>${upperBB}</td>
-                        <td>${lowerBB}</td>
-                        <td>${disparity}</td>
-                    </tr>
-                `;
+                htmlContent += `<tr><td>${date}</td><td>${price}</td><td>${mulrim}</td><td>${sma}</td><td>${upperBB}</td><td>${lowerBB}</td><td>${disparity}</td></tr>`;
             }
             tableBody.innerHTML = htmlContent;
         }
 
-        // 4. CSV 다운로드 기능
         function downloadCSV() {
             const table = document.getElementById('data-table');
-            // 엑셀에서 한글이 깨지지 않도록 BOM(Byte Order Mark) 추가
             let csvContent = "\uFEFF"; 
-            
-            // 테이블의 모든 행(가장 최신 날짜가 위로 정렬됨)을 순회하며 CSV 포맷 구성
             for (let i = 0; i < table.rows.length; i++) {
                 let row = table.rows[i];
                 let rowData = [];
-                
                 for (let j = 0; j < row.cells.length; j++) {
-                    // innerText를 사용하여 불필요한 HTML 태그를 깔끔하게 제거
                     let cellText = row.cells[j].innerText;
-                    // 엑셀 텍스트 오류 방지를 위해 양쪽에 따옴표 삽입
                     cellText = '"' + cellText.replace(/"/g, '""') + '"';
                     rowData.push(cellText);
                 }
                 csvContent += rowData.join(",") + "\n";
             }
-            
-            // Blob 객체 생성 및 자동 다운로드 링크 실행
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
-            
             const link = document.createElement("a");
             link.setAttribute("href", url);
             link.setAttribute("download", `${cachedTicker}_일봉데이터_분석.csv`);
@@ -575,7 +603,163 @@
             URL.revokeObjectURL(url);
         }
 
-        // 페이지 최초 로드 시 기본값으로 실행
+        // --- 이격도 최적화 계산기 로직 ---
+        function openOptimizer() {
+            if (!cachedData) {
+                alert('먼저 데이터를 불러와주세요.');
+                return;
+            }
+            document.getElementById('optimizer-modal').style.display = 'flex';
+            document.getElementById('opt-apply-btn').style.display = 'none';
+            document.getElementById('opt-result-text').innerText = '최적의 기준 일수를 찾기 위해 시뮬레이션 중입니다...';
+
+            if (optChartInstance) {
+                optChartInstance.destroy();
+            }
+
+            // UI 렌더링 후 연산이 시작되도록 약간의 지연시간을 줌
+            setTimeout(() => {
+                runOptimization();
+            }, 100);
+        }
+
+        function closeOptimizer() {
+            document.getElementById('optimizer-modal').style.display = 'none';
+        }
+
+        function getFastR2ForPeriod(period) {
+            const N = cachedData.prices.length;
+            let validX = [];
+            let validY = [];
+            let sum = 0;
+
+            for (let i = 0; i < N; i++) {
+                let price = cachedData.prices[i];
+                sum += price;
+                if (i >= period) {
+                    sum -= cachedData.prices[i - period];
+                }
+                if (i >= period - 1) {
+                    let avg = sum / period;
+                    if (avg > 0) {
+                        let disparity = price / avg;
+                        let futureDaysAvailable = (N - 1) - i;
+                        if (futureDaysAvailable >= cachedData.maxMulrim && Number.isFinite(disparity)) {
+                            validX.push(disparity);
+                            validY.push(cachedData.rawMulrimData[i]);
+                        }
+                    }
+                }
+            }
+
+            if (validX.length < 30) return 0; // 신뢰도 확보를 위해 최소 30개 이상의 유효 데이터 쌍 요구
+
+            let sumX = 0, sumY = 0;
+            for (let i = 0; i < validX.length; i++) { sumX += validX[i]; sumY += validY[i]; }
+            let meanX = sumX / validX.length;
+            let meanY = sumY / validY.length;
+
+            let covXY = 0, varX = 0, varY = 0;
+            for (let i = 0; i < validX.length; i++) {
+                let dx = validX[i] - meanX;
+                let dy = validY[i] - meanY;
+                covXY += dx * dy;
+                varX += dx * dx;
+                varY += dy * dy;
+            }
+
+            if (varX > 0 && varY > 0) {
+                let r = covXY / Math.sqrt(varX * varY);
+                return r * r;
+            }
+            return 0;
+        }
+
+        function runOptimization() {
+            const N = cachedData.prices.length;
+            // R² 오버피팅을 막기 위해 테스트할 최대 일수 제한 (최소 30쌍 보장)
+            const maxAllowed = N - cachedData.maxMulrim - 30; 
+            const maxTestPeriod = Math.min(3000, maxAllowed);
+            
+            if (maxTestPeriod < 10) {
+                alert("상장 기간이 짧아 데이터를 충분히 확보할 수 없으므로 최적화를 수행할 수 없습니다.");
+                closeOptimizer();
+                return;
+            }
+
+            let labels = [];
+            let r2Data = [];
+            let maxR2 = -1;
+            let bestPeriod = 10;
+
+            // 10일부터 최대 3000일까지 10일 간격으로 고속 루프
+            for (let p = 10; p <= maxTestPeriod; p += 10) {
+                let r2 = getFastR2ForPeriod(p);
+                labels.push(p);
+                r2Data.push(r2);
+                if (r2 > maxR2) {
+                    maxR2 = r2;
+                    bestPeriod = p;
+                }
+            }
+
+            bestOptimizedPeriod = bestPeriod;
+            renderOptChart(labels, r2Data, bestPeriod);
+
+            document.getElementById('opt-result-text').innerHTML = `최적화 기준일수는 <span style="color:#e74c3c; font-size:24px;">${bestPeriod}일</span> 입니다.<br><span style="font-size:16px; color:#7f8c8d;">(최대 R² = ${maxR2.toFixed(4)})</span><br><br>적용하시겠습니까?`;
+            document.getElementById('opt-apply-btn').style.display = 'inline-block';
+        }
+
+        function renderOptChart(labels, data, bestPeriod) {
+            const ctx = document.getElementById('optimizerChart').getContext('2d');
+            
+            // 가장 높은 R² 값의 포인트만 붉은색으로 강조
+            let pointColors = labels.map(l => l === bestPeriod ? '#e74c3c' : '#3498db');
+            let pointRadius = labels.map(l => l === bestPeriod ? 6 : 0);
+
+            optChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'R² (결정계수)',
+                        data: data,
+                        borderColor: '#3498db',
+                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        borderWidth: 2,
+                        pointBackgroundColor: pointColors,
+                        pointBorderColor: pointColors,
+                        pointRadius: pointRadius,
+                        pointHoverRadius: 6,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { title: { display: true, text: '기준 일수 (Days)' } },
+                        y: { title: { display: true, text: 'R² 값' }, beginAtZero: false }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) { return `기준일수: ${context[0].label}일`; },
+                                label: function(context) { return `R² = ${context.parsed.y.toFixed(4)}`; }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function applyOptimization() {
+            document.getElementById('ma-period').value = bestOptimizedPeriod;
+            closeOptimizer();
+            calculateAndRender();
+        }
+
+        // 시작
         handleRenderClick();
     </script>
 </body>
