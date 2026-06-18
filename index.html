@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>주식 커스텀 분석 차트 및 최적화 계산기 (추세선 예측 포함)</title>
+    <title>주식 커스텀 분석 차트 (평균 이격도 역산 포함)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
@@ -411,6 +411,7 @@
             const maxMulrim = cachedData.maxMulrim;
             const rawMulrimData = cachedData.rawMulrimData;
 
+            // 1. 이평선, 볼린저밴드, 이격도 계산
             for (let i = 0; i < N; i++) {
                 const currentPrice = cachedData.prices[i];
                 windowPrices.push(currentPrice);
@@ -448,6 +449,30 @@
                 }
             }
 
+            // 평균 이격도 계산
+            let avgDisparity = 0;
+            if (validDisparities.length > 0) {
+                avgDisparity = validDisparities.reduce((a, b) => a + b, 0) / validDisparities.length;
+            }
+
+            // 이격도 1.0 기준선, 평균 이격도 가로선, 종가 차트용 역산 라인 생성
+            let disparityBaseLineData = [];
+            let disparityAvgLineData = [];
+            let priceAvgDisparityLineData = [];
+
+            for (let i = 0; i < N; i++) {
+                if (disparityData[i] !== null) {
+                    disparityBaseLineData.push(1.0); // 이평선 1배 라인
+                    disparityAvgLineData.push(avgDisparity); // 평균 이격도 가로선
+                    priceAvgDisparityLineData.push(smaData[i] * avgDisparity); // 평균 이격도 기준 가격
+                } else {
+                    disparityBaseLineData.push(null);
+                    disparityAvgLineData.push(null);
+                    priceAvgDisparityLineData.push(null);
+                }
+            }
+
+            // 2. 물림일수 필터링
             let displayMulrimData = new Array(N);
             for (let i = 0; i < N; i++) {
                 let futureDaysAvailable = (N - 1) - i;
@@ -458,7 +483,7 @@
                 }
             }
 
-            // 회귀분석(Regression) 기반 추세선 계산 및 R² 산출
+            // 3. 회귀분석 기반 추세선 및 R² 산출
             let rSquared = 0;
             let slope = 0;
             let intercept = 0;
@@ -490,7 +515,6 @@
                 if (varX > 0 && varY > 0) {
                     let r = covXY / Math.sqrt(varX * varY);
                     rSquared = r * r;
-                    // 선형 회귀 추세선의 기울기(m)와 절편(b)
                     slope = covXY / varX;
                     intercept = meanY - slope * meanX;
                 }
@@ -498,8 +522,8 @@
 
             let maxDisp = 5, minDisp = 0;
             if (validDisparities.length > 0) {
-                maxDisp = Math.max(...validDisparities);
-                minDisp = Math.min(...validDisparities);
+                maxDisp = Math.max(...validDisparities, 1.0, avgDisparity); // 기준선과 평균선이 잘리지 않도록 확보
+                minDisp = Math.min(...validDisparities, 1.0, avgDisparity);
             }
 
             // 패널 업데이트
@@ -508,33 +532,32 @@
                 const latestDate = cachedData.dates[cachedData.dates.length - 1];
                 const latestDisparity = validDisparities[validDisparities.length - 1];
                 
-                // 위험도(%) 계산
                 let riskLevel = 0;
                 if (maxDisp > minDisp) {
                     riskLevel = ((latestDisparity - minDisp) / (maxDisp - minDisp)) * 100;
                 }
 
-                // 회귀방정식을 이용한 예상 물림일수 산출
                 let expectedMulrim = slope * latestDisparity + intercept;
-                expectedMulrim = Math.max(0, Math.round(expectedMulrim)) || 0; // 음수 방지 및 정수형 변환
+                expectedMulrim = Math.max(0, Math.round(expectedMulrim)) || 0;
 
                 evalPanel.innerHTML = `오늘의 평가 (${latestDate})<br><br>` +
                                       `이격 비율 : <span class="eval-highlight">${latestDisparity.toFixed(2)}x</span> &nbsp;|&nbsp; ` +
                                       `위험도 : <span class="eval-highlight">${riskLevel.toFixed(1)}%</span> <span class="eval-sub">(0%에 가까울수록 매수 권장)</span><br>` +
                                       `추세선(회귀분석) 기반 예상 물림일수 : <span class="eval-highlight">약 ${expectedMulrim}일</span><br>` +
-                                      `<span style="font-size:15px; color:#7f8c8d; display:inline-block; margin-top:12px;">기준일수 : ${period}일 / R² (결정계수) : ${rSquared.toFixed(4)}</span>`;
+                                      `<span style="font-size:15px; color:#7f8c8d; display:inline-block; margin-top:12px;">기준일수 : ${period}일 / R² (결정계수) : ${rSquared.toFixed(4)} / 평균 이격도 : ${avgDisparity.toFixed(2)}x</span>`;
                 evalPanel.style.display = 'block';
             } else {
                 evalPanel.innerHTML = `오늘의 평가 : 기준 일수(${period}일)가 상장 기간보다 길어 산정할 수 없습니다.`;
                 evalPanel.style.display = 'block';
             }
 
-            renderPriceChart(cachedData.dates, cachedData.prices, smaData, upperBBData, lowerBBData, period, upperMult, lowerMult);
-            renderDisparityChart(cachedData.dates, disparityData, maxDisp, minDisp, period);
+            // 렌더링 호출 (새로 생성한 데이터 배열들 전달)
+            renderPriceChart(cachedData.dates, cachedData.prices, smaData, upperBBData, lowerBBData, priceAvgDisparityLineData, avgDisparity, period, upperMult, lowerMult);
+            renderDisparityChart(cachedData.dates, disparityData, disparityBaseLineData, disparityAvgLineData, avgDisparity, maxDisp, minDisp, period);
             populateTable(cachedData.dates, cachedData.prices, displayMulrimData, smaData, upperBBData, lowerBBData, disparityData, period);
         }
 
-        function renderPriceChart(labels, priceData, smaData, upperBBData, lowerBBData, period, upperMult, lowerMult) {
+        function renderPriceChart(labels, priceData, smaData, upperBBData, lowerBBData, priceAvgLineData, avgDisparity, period, upperMult, lowerMult) {
             const ctx = document.getElementById('priceChart').getContext('2d');
             if (window.priceChartInstance) window.priceChartInstance.destroy();
             window.priceChartInstance = new Chart(ctx, {
@@ -543,25 +566,30 @@
                     labels: labels,
                     datasets: [
                         { label: `${cachedTicker} 수정종가`, data: priceData, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, order: 1 },
-                        { label: `${period}일 이동평균선`, data: smaData, borderColor: '#f1c40f', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 2 },
-                        { label: `BB 상한 (${upperMult}σ)`, data: upperBBData, borderColor: '#95a5a6', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 3 },
-                        { label: `BB 하한 (${lowerMult}σ)`, data: lowerBBData, borderColor: '#95a5a6', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 4 }
+                        { label: `평균 이격 위치 (SMA × ${avgDisparity.toFixed(2)})`, data: priceAvgLineData, borderColor: '#000000', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 2 },
+                        { label: `${period}일 이동평균선`, data: smaData, borderColor: '#f1c40f', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 3 },
+                        { label: `BB 상한 (${upperMult}σ)`, data: upperBBData, borderColor: '#95a5a6', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 4 },
+                        { label: `BB 하한 (${lowerMult}σ)`, data: lowerBBData, borderColor: '#95a5a6', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 5 }
                     ]
                 },
                 options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } }, y: { type: 'logarithmic', display: true, position: 'left', title: { display: true, text: '가격 (USD, 로그스케일)', color: '#333' } } } }
             });
         }
 
-        function renderDisparityChart(labels, disparityData, maxDisp, minDisp, period) {
+        function renderDisparityChart(labels, disparityData, baseLineData, avgLineData, avgDisparity, maxDisp, minDisp, period) {
             const ctx = document.getElementById('disparityChart').getContext('2d');
             if (window.disparityChartInstance) window.disparityChartInstance.destroy();
             window.disparityChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: labels,
-                    datasets: [ { label: `${period}일 이격 비율 (배수)`, data: disparityData, borderColor: '#e74c3c', backgroundColor: 'rgba(231, 76, 60, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, fill: true } ]
+                    datasets: [ 
+                        { label: `${period}일 이격 비율`, data: disparityData, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, fill: true, order: 1 },
+                        { label: `평균 이격도 (${avgDisparity.toFixed(2)}x)`, data: avgLineData, borderColor: '#000000', borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true, order: 2 },
+                        { label: `이평선 기준 (1.0x)`, data: baseLineData, borderColor: '#f1c40f', borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true, order: 3 }
+                    ]
                 },
-                options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } }, y: { type: 'linear', display: true, position: 'right', title: { display: true, text: '이격 비율 (현재가/이평선)', color: '#e74c3c' }, min: minDisp, max: maxDisp } } }
+                options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } }, y: { type: 'linear', display: true, position: 'right', title: { display: true, text: '이격 비율 (현재가/이평선)', color: '#3498db' }, min: minDisp, max: maxDisp } } }
             });
         }
 
@@ -605,7 +633,7 @@
             URL.revokeObjectURL(url);
         }
 
-        // --- 이격도 최적화 계산기 로직 (1일 단위 정밀 루프) ---
+        // --- 이격도 최적화 계산기 로직 ---
         function openOptimizer() {
             if (!cachedData) {
                 alert('먼저 데이터를 불러와주세요.');
@@ -619,7 +647,6 @@
                 optChartInstance.destroy();
             }
 
-            // 브라우저 렌더링 후 연산을 시작하도록 지연
             setTimeout(() => {
                 runOptimization();
             }, 100);
