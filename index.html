@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>주식 커스텀 분석 차트 (국장 지원 및 최적화)</title>
+    <title>주식 커스텀 분석 차트 (기업명 및 볼린저 이격도 포함)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
@@ -271,7 +271,7 @@
                 <thead>
                     <tr>
                         <th>날짜</th>
-                        <th>수정종가</th>
+                        <th>수정종가 (USD/KRW)</th>
                         <th>물림일수 (일)</th>
                         <th id="th-sma">N일 이평선</th>
                         <th id="th-upper-bb">BB 상한</th>
@@ -287,6 +287,7 @@
 
     <script>
         let cachedTicker = '';
+        let cachedCompanyName = 'TQQQ';
         let cachedData = null;
         let optChartInstance = null;
         let bestOptimizedPeriod = 1500;
@@ -300,7 +301,6 @@
                 return;
             }
 
-            // 국장 선택 시 숫자로만 입력했다면 자동으로 접미사(.KS, .KQ) 붙여주기
             let inputTicker = rawTicker;
             if (marketSuffix !== "" && !rawTicker.includes(".")) {
                 inputTicker = rawTicker + marketSuffix;
@@ -348,6 +348,12 @@
                 if (!dataFetched) throw new Error('모든 프록시에서 데이터 로드 실패');
 
                 const result = dataFetched.chart.result[0];
+                
+                // 회사 이름 가져오기 (메타데이터 활용)
+                const meta = result.meta;
+                const companyName = meta.shortName || meta.longName || ticker;
+                cachedCompanyName = companyName;
+
                 const timestamps = result.timestamp;
                 const priceDataArray = result.indicators.adjclose ? result.indicators.adjclose[0].adjclose : result.indicators.quote[0].close;
 
@@ -388,14 +394,14 @@
                 };
                 cachedTicker = ticker;
 
-                document.getElementById('main-title').innerText = `${ticker} Custom Analytics`;
+                document.getElementById('main-title').innerText = `${companyName} Custom Analytics`;
 
                 loadingEl.style.display = 'none';
                 calculateAndRender(); 
 
             } catch (error) {
                 console.error(error);
-                loadingEl.innerHTML = `[${ticker}] 데이터를 찾을 수 없거나 통신에 실패했습니다.<br><span style="font-size:14px;">상장폐지 여부나 종목코드를 다시 확인해 주세요. (한국 주식은 '종목명' 대신 '종목코드 6자리' 입력 필요)</span>`;
+                loadingEl.innerHTML = `[${ticker}] 데이터를 찾을 수 없거나 통신에 실패했습니다.<br><span style="font-size:14px;">상장폐지 여부나 종목코드를 다시 확인해 주세요. (한국 주식은 '종목코드 6자리' 입력 필요)</span>`;
                 loadingEl.style.color = '#e74c3c';
                 
                 setTimeout(() => {
@@ -404,7 +410,6 @@
             }
         }
 
-        // --- 메인 분석 및 렌더링 로직 ---
         function calculateAndRender() {
             if (!cachedData) return;
 
@@ -472,20 +477,29 @@
                 avgDisparity = validDisparities.reduce((a, b) => a + b, 0) / validDisparities.length;
             }
 
-            // 이격도 1.0 기준선, 평균 이격도 가로선, 종가 차트용 역산 라인 생성
+            // 이격도 1.0 기준선, 평균 이격도 가로선, 종가 차트용 역산 라인, 볼린저 이격도 선 생성
             let disparityBaseLineData = [];
             let disparityAvgLineData = [];
             let priceAvgDisparityLineData = [];
+            
+            let upperBBDisparityData = [];
+            let lowerBBDisparityData = [];
 
             for (let i = 0; i < N; i++) {
                 if (disparityData[i] !== null) {
                     disparityBaseLineData.push(1.0); 
                     disparityAvgLineData.push(avgDisparity); 
                     priceAvgDisparityLineData.push(smaData[i] * avgDisparity); 
+                    
+                    // 볼린저 밴드 가격을 이평선으로 나누어 이격 비율로 환산
+                    upperBBDisparityData.push(upperBBData[i] / smaData[i]);
+                    lowerBBDisparityData.push(lowerBBData[i] / smaData[i]);
                 } else {
                     disparityBaseLineData.push(null);
                     disparityAvgLineData.push(null);
                     priceAvgDisparityLineData.push(null);
+                    upperBBDisparityData.push(null);
+                    lowerBBDisparityData.push(null);
                 }
             }
 
@@ -537,10 +551,13 @@
                 }
             }
 
+            // 이격도 차트 Y축 Max/Min 범위 최적화 (볼린저밴드 포함)
             let maxDisp = 5, minDisp = 0;
             if (validDisparities.length > 0) {
-                maxDisp = Math.max(...validDisparities, 1.0, avgDisparity);
-                minDisp = Math.min(...validDisparities, 1.0, avgDisparity);
+                let validUpper = upperBBDisparityData.filter(v => v !== null);
+                let validLower = lowerBBDisparityData.filter(v => v !== null);
+                maxDisp = Math.max(...validDisparities, 1.0, avgDisparity, ...validUpper);
+                minDisp = Math.min(...validDisparities, 1.0, avgDisparity, ...validLower);
             }
 
             // 패널 업데이트
@@ -569,7 +586,7 @@
             }
 
             renderPriceChart(cachedData.dates, cachedData.prices, smaData, upperBBData, lowerBBData, priceAvgDisparityLineData, avgDisparity, period, upperMult, lowerMult);
-            renderDisparityChart(cachedData.dates, disparityData, disparityBaseLineData, disparityAvgLineData, avgDisparity, maxDisp, minDisp, period);
+            renderDisparityChart(cachedData.dates, disparityData, disparityBaseLineData, disparityAvgLineData, upperBBDisparityData, lowerBBDisparityData, avgDisparity, maxDisp, minDisp, period, upperMult, lowerMult);
             populateTable(cachedData.dates, cachedData.prices, displayMulrimData, smaData, upperBBData, lowerBBData, disparityData, period);
         }
 
@@ -581,7 +598,7 @@
                 data: {
                     labels: labels,
                     datasets: [
-                        { label: `${cachedTicker} 수정종가`, data: priceData, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, order: 1 },
+                        { label: `${cachedCompanyName} 수정종가`, data: priceData, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, order: 1 },
                         { label: `평균 이격 위치 (SMA × ${avgDisparity.toFixed(2)})`, data: priceAvgLineData, borderColor: '#000000', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 2 },
                         { label: `${period}일 이동평균선`, data: smaData, borderColor: '#f1c40f', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 3 },
                         { label: `BB 상한 (${upperMult}σ)`, data: upperBBData, borderColor: '#95a5a6', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 4 },
@@ -592,7 +609,7 @@
             });
         }
 
-        function renderDisparityChart(labels, disparityData, baseLineData, avgLineData, avgDisparity, maxDisp, minDisp, period) {
+        function renderDisparityChart(labels, disparityData, baseLineData, avgLineData, upperBBDisparityData, lowerBBDisparityData, avgDisparity, maxDisp, minDisp, period, upperMult, lowerMult) {
             const ctx = document.getElementById('disparityChart').getContext('2d');
             if (window.disparityChartInstance) window.disparityChartInstance.destroy();
             window.disparityChartInstance = new Chart(ctx, {
@@ -602,7 +619,9 @@
                     datasets: [ 
                         { label: `${period}일 이격 비율`, data: disparityData, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, fill: true, order: 1 },
                         { label: `평균 이격도 (${avgDisparity.toFixed(2)}x)`, data: avgLineData, borderColor: '#000000', borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true, order: 2 },
-                        { label: `이평선 기준 (1.0x)`, data: baseLineData, borderColor: '#f1c40f', borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true, order: 3 }
+                        { label: `이평선 기준 (1.0x)`, data: baseLineData, borderColor: '#f1c40f', borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true, order: 3 },
+                        { label: `BB 이격 상한 (${upperMult}σ)`, data: upperBBDisparityData, borderColor: '#95a5a6', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 4 },
+                        { label: `BB 이격 하한 (${lowerMult}σ)`, data: lowerBBDisparityData, borderColor: '#95a5a6', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 5 }
                     ]
                 },
                 options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } }, y: { type: 'linear', display: true, position: 'right', title: { display: true, text: '이격 비율 (현재가/이평선)', color: '#3498db' }, min: minDisp, max: maxDisp } } }
@@ -642,7 +661,7 @@
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.setAttribute("href", url);
-            link.setAttribute("download", `${cachedTicker}_일봉데이터_분석.csv`);
+            link.setAttribute("download", `${cachedCompanyName}_일봉데이터_분석.csv`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
