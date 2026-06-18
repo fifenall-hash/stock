@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TQQQ 차트 (이격도 + 1500일 이평선 + 볼린저밴드)</title>
+    <title>TQQQ 종합 차트 (표준편차 설정 기능)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
@@ -38,6 +38,51 @@
             color: #7f8c8d;
             font-size: 14px;
         }
+        .control-panel {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 20px;
+            background: #f1f2f6;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        .control-panel label {
+            font-size: 14px;
+            font-weight: bold;
+            color: #2c3e50;
+            display: flex;
+            align-items: center;
+        }
+        .control-panel input {
+            width: 60px;
+            padding: 6px;
+            margin-left: 8px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            text-align: center;
+            font-size: 14px;
+        }
+        .btn {
+            background-color: #2c3e50;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            font-size: 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .btn:hover {
+            background-color: #1a252f;
+        }
+        .btn-table {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 16px;
+        }
         .chart-wrapper {
             position: relative;
             height: 60vh;
@@ -62,23 +107,10 @@
         }
         .btn-container {
             text-align: center;
-            margin-bottom: 20px;
-        }
-        .btn {
-            background-color: #2c3e50;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            font-size: 16px;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
-        .btn:hover {
-            background-color: #1a252f;
         }
         #table-container {
             display: none;
+            margin-top: 20px;
             max-height: 400px;
             overflow-y: auto;
             border: 1px solid #ddd;
@@ -112,14 +144,20 @@
             <h1>TQQQ Comprehensive Chart (1500-Day)</h1>
             <p>수정종가(파란선), 1500일 이평선(노란선), 볼린저밴드(회색 점선), 이격도(붉은선)</p>
         </div>
+
+        <div class="control-panel">
+            <label>상한선 표준편차 (+)<input type="number" id="upper-mult" step="0.1" value="2.0"></label>
+            <label>하한선 표준편차 (-)<input type="number" id="lower-mult" step="0.1" value="2.0"></label>
+            <button class="btn" onclick="updateBandsAndRender()">차트 재적용</button>
+        </div>
         
         <div class="chart-wrapper">
-            <div id="loading">데이터를 분석하고 계산하는 중입니다...<br><span style="font-size:14px; color:#7f8c8d;">(수백만 번의 분산 연산이 진행되어 약간의 시간이 소요됩니다)</span></div>
+            <div id="loading">초기 데이터를 분석하고 계산하는 중입니다...<br><span style="font-size:14px; color:#7f8c8d;">(최대 5초 정도 소요될 수 있습니다)</span></div>
             <canvas id="myChart"></canvas>
         </div>
 
         <div class="btn-container">
-            <button class="btn" onclick="toggleTable()">일봉 Raw 데이터 표 보기/숨기기</button>
+            <button class="btn btn-table" onclick="toggleTable()">일봉 Raw 데이터 표 보기/숨기기</button>
         </div>
 
         <div id="table-container">
@@ -129,8 +167,8 @@
                         <th>날짜</th>
                         <th>수정종가 (USD)</th>
                         <th>1500일 이평선</th>
-                        <th>BB 상한 (2σ)</th>
-                        <th>BB 하한 (2σ)</th>
+                        <th id="th-upper-bb">BB 상한 (2σ)</th>
+                        <th id="th-lower-bb">BB 하한 (2σ)</th>
                         <th>1500일 이격도 (배수)</th>
                     </tr>
                 </thead>
@@ -151,6 +189,9 @@
             `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
         ];
 
+        // 빠른 재계산을 위한 데이터 캐싱 변수
+        let cachedData = null;
+
         async function fetchWithFallback() {
             for (let proxy of proxyList) {
                 try {
@@ -166,7 +207,7 @@
             throw new Error('데이터 로드 실패');
         }
 
-        async function fetchAndRenderChart() {
+        async function initDataFetch() {
             try {
                 const rawData = await fetchWithFallback();
                 const result = rawData.chart.result[0];
@@ -176,13 +217,9 @@
 
                 let dates = [];
                 let prices = [];
-                
-                // 추가된 지표 데이터를 담을 배열들
                 let smaData = [];
-                let upperBBData = [];
-                let lowerBBData = [];
+                let stdDevData = []; // 순수 표준편차 값만 따로 저장
                 let disparityData = [];
-                
                 let validDisparities = [];
                 
                 const MA_PERIOD = 1500;
@@ -207,28 +244,20 @@
                     }
 
                     if (windowPrices.length === MA_PERIOD) {
-                        // 1. 이동평균선(SMA) 계산
                         const sum = windowPrices.reduce((a, b) => a + b, 0);
                         const average = sum / MA_PERIOD;
                         
-                        // 2. 표준편차 계산 (볼린저밴드용)
                         let sqSum = 0;
                         for (let j = 0; j < MA_PERIOD; j++) {
                             sqSum += Math.pow(windowPrices[j] - average, 2);
                         }
                         const stdDev = Math.sqrt(sqSum / MA_PERIOD);
-                        
-                        // 3. 볼린저밴드 상한/하한 계산 (표준편차 2배)
-                        const upperBand = average + (2 * stdDev);
-                        // 로그스케일 차트에서는 값이 음수가 되면 렌더링 에러가 발생하므로, 하한선이 0 이하로 내려갈 경우를 대비해 최솟값을 0.0001로 방어 처리
-                        const lowerBand = Math.max(average - (2 * stdDev), 0.0001); 
 
                         if (average > 0) {
                             const disparity = currentPrice / average; 
                             
                             smaData.push(average);
-                            upperBBData.push(upperBand);
-                            lowerBBData.push(lowerBand);
+                            stdDevData.push(stdDev);
                             
                             if (Number.isFinite(disparity)) {
                                 disparityData.push(disparity);
@@ -238,28 +267,27 @@
                             }
                         } else {
                             smaData.push(null);
-                            upperBBData.push(null);
-                            lowerBBData.push(null);
+                            stdDevData.push(null);
                             disparityData.push(null);
                         }
                     } else {
                         smaData.push(null);
-                        upperBBData.push(null);
-                        lowerBBData.push(null);
+                        stdDevData.push(null);
                         disparityData.push(null);
                     }
                 }
 
-                let maxDisparityValue = 5;
-                let minDisparityValue = 0;
-                
-                if (validDisparities.length > 0) {
-                    maxDisparityValue = Math.max(...validDisparities);
-                    minDisparityValue = Math.min(...validDisparities);
-                }
+                // 처리된 원본 데이터를 전역 변수에 저장
+                cachedData = {
+                    dates: dates,
+                    prices: prices,
+                    smaData: smaData,
+                    stdDevData: stdDevData,
+                    disparityData: disparityData,
+                    validDisparities: validDisparities
+                };
 
-                renderChart(dates, prices, smaData, upperBBData, lowerBBData, disparityData, maxDisparityValue, minDisparityValue);
-                populateTable(dates, prices, smaData, upperBBData, lowerBBData, disparityData);
+                updateBandsAndRender(); // 렌더링 함수 호출
                 document.getElementById('loading').style.display = 'none';
 
             } catch (error) {
@@ -269,7 +297,64 @@
             }
         }
 
-        function renderChart(labels, priceData, smaData, upperBBData, lowerBBData, disparityData, maxDisp, minDisp) {
+        // 사용자가 입력한 표준편차 배수를 적용하여 선을 재계산하는 함수
+        function updateBandsAndRender() {
+            if (!cachedData) return;
+
+            const upperMult = parseFloat(document.getElementById('upper-mult').value) || 2.0;
+            const lowerMult = parseFloat(document.getElementById('lower-mult').value) || 2.0;
+
+            // 표 헤더 텍스트 동적 업데이트
+            document.getElementById('th-upper-bb').innerText = `BB 상한 (${upperMult}σ)`;
+            document.getElementById('th-lower-bb').innerText = `BB 하한 (${lowerMult}σ)`;
+
+            let upperBBData = [];
+            let lowerBBData = [];
+
+            // 저장된 순수 표준편차와 이평선을 바탕으로 곱하기(배수) 연산만 빠르게 수행
+            for (let i = 0; i < cachedData.smaData.length; i++) {
+                const sma = cachedData.smaData[i];
+                const stdDev = cachedData.stdDevData[i];
+
+                if (sma !== null && stdDev !== null) {
+                    upperBBData.push(sma + (upperMult * stdDev));
+                    lowerBBData.push(Math.max(sma - (lowerMult * stdDev), 0.0001));
+                } else {
+                    upperBBData.push(null);
+                    lowerBBData.push(null);
+                }
+            }
+
+            let maxDisp = 5, minDisp = 0;
+            if (cachedData.validDisparities.length > 0) {
+                maxDisp = Math.max(...cachedData.validDisparities);
+                minDisp = Math.min(...cachedData.validDisparities);
+            }
+
+            renderChart(
+                cachedData.dates, 
+                cachedData.prices, 
+                cachedData.smaData, 
+                upperBBData, 
+                lowerBBData, 
+                cachedData.disparityData, 
+                maxDisp, 
+                minDisp,
+                upperMult,
+                lowerMult
+            );
+
+            populateTable(
+                cachedData.dates, 
+                cachedData.prices, 
+                cachedData.smaData, 
+                upperBBData, 
+                lowerBBData, 
+                cachedData.disparityData
+            );
+        }
+
+        function renderChart(labels, priceData, smaData, upperBBData, lowerBBData, disparityData, maxDisp, minDisp, upperMult, lowerMult) {
             const ctx = document.getElementById('myChart').getContext('2d');
             
             if (window.myLineChart) {
@@ -284,18 +369,18 @@
                         {
                             label: 'TQQQ 수정종가 (로그스케일)',
                             data: priceData,
-                            borderColor: '#3498db', // 파란색
+                            borderColor: '#3498db',
                             backgroundColor: 'rgba(52, 152, 219, 0.1)',
                             borderWidth: 2,
                             pointRadius: 0,
                             yAxisID: 'y',
                             tension: 0.1,
-                            order: 1 // 선이 겹칠 때 위에 오도록 순서 설정
+                            order: 1
                         },
                         {
                             label: '1500일 이동평균선',
                             data: smaData,
-                            borderColor: '#f1c40f', // 노란색(주황빛)
+                            borderColor: '#f1c40f',
                             borderWidth: 2,
                             pointRadius: 0,
                             yAxisID: 'y',
@@ -304,11 +389,11 @@
                             order: 3
                         },
                         {
-                            label: '볼린저밴드 상한 (2σ)',
+                            label: `볼린저밴드 상한 (${upperMult}σ)`,
                             data: upperBBData,
-                            borderColor: '#95a5a6', // 회색
+                            borderColor: '#95a5a6',
                             borderWidth: 1.5,
-                            borderDash: [5, 5], // 점선 처리
+                            borderDash: [5, 5],
                             pointRadius: 0,
                             yAxisID: 'y',
                             tension: 0.1,
@@ -316,11 +401,11 @@
                             order: 4
                         },
                         {
-                            label: '볼린저밴드 하한 (2σ)',
+                            label: `볼린저밴드 하한 (${lowerMult}σ)`,
                             data: lowerBBData,
-                            borderColor: '#95a5a6', // 회색
+                            borderColor: '#95a5a6',
                             borderWidth: 1.5,
-                            borderDash: [5, 5], // 점선 처리
+                            borderDash: [5, 5],
                             pointRadius: 0,
                             yAxisID: 'y',
                             tension: 0.1,
@@ -330,7 +415,7 @@
                         {
                             label: '1500일 이격 비율 (배수)',
                             data: disparityData,
-                            borderColor: '#e74c3c', // 붉은색
+                            borderColor: '#e74c3c',
                             borderWidth: 2, 
                             pointRadius: 0,
                             yAxisID: 'y1',
@@ -354,7 +439,6 @@
                                     let label = context.dataset.label || '';
                                     if (label) label += ': ';
                                     if (context.parsed.y !== null) {
-                                        // 이격도인 경우(우측 y1축) x를 붙임
                                         if (context.dataset.yAxisID === 'y1') {
                                             label += context.parsed.y.toFixed(2) + 'x';
                                         } else {
@@ -427,7 +511,8 @@
             }
         }
 
-        fetchAndRenderChart();
+        // 스크립트 실행
+        initDataFetch();
     </script>
 </body>
 </html>
