@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>주식 커스텀 분석 차트 및 평가</title>
+    <title>주식 커스텀 분석 차트 및 평가 (R² 포함)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
@@ -85,7 +85,7 @@
             background-color: #1a252f;
         }
         .evaluation-panel {
-            display: none; /* 데이터 로드 전까지 숨김 */
+            display: none; 
             background-color: #e8f4f8;
             border: 1px solid #bce8f1;
             color: #31708f;
@@ -96,6 +96,7 @@
             font-weight: bold;
             margin-bottom: 20px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            line-height: 1.6;
         }
         .eval-highlight {
             color: #e74c3c;
@@ -208,6 +209,7 @@
                     <tr>
                         <th>날짜</th>
                         <th>수정종가 (USD)</th>
+                        <th>물림일수 (일)</th>
                         <th id="th-sma">N일 이평선</th>
                         <th id="th-upper-bb">BB 상한</th>
                         <th id="th-lower-bb">BB 하한</th>
@@ -329,7 +331,10 @@
             let validDisparities = [];
             let windowPrices = [];
 
-            for (let i = 0; i < cachedData.prices.length; i++) {
+            const N = cachedData.prices.length;
+
+            // 1. 이평선, 볼린저밴드, 이격도 계산
+            for (let i = 0; i < N; i++) {
                 const currentPrice = cachedData.prices[i];
                 windowPrices.push(currentPrice);
 
@@ -374,13 +379,78 @@
                 }
             }
 
+            // 2. 물림일수(COUNTIF 방식) 계산 및 최댓값 도출
+            let rawMulrimData = new Array(N).fill(0);
+            let maxMulrim = 0;
+            for (let i = 0; i < N; i++) {
+                let count = 0;
+                let currentPrice = cachedData.prices[i];
+                for (let j = i + 1; j < N; j++) {
+                    if (cachedData.prices[j] < currentPrice) {
+                        count++;
+                    }
+                }
+                rawMulrimData[i] = count;
+                if (count > maxMulrim) {
+                    maxMulrim = count;
+                }
+            }
+
+            // 3. 물림일수 표기 필터링 (최신 날짜와의 차이가 maxMulrim보다 작으면 '데이터 부족' 처리)
+            let displayMulrimData = new Array(N);
+            for (let i = 0; i < N; i++) {
+                let futureDaysAvailable = (N - 1) - i;
+                if (futureDaysAvailable < maxMulrim) {
+                    displayMulrimData[i] = "데이터 부족";
+                } else {
+                    displayMulrimData[i] = rawMulrimData[i];
+                }
+            }
+
+            // 4. 이격도와 물림일수 간의 R² (결정계수) 계산
+            let rSquared = 0;
+            let validX = [];
+            let validY = [];
+            for (let i = 0; i < N; i++) {
+                // 이격도 값이 존재하고 && 물림일수가 '데이터 부족'이 아닌 날짜만 추출
+                if (disparityData[i] !== null && displayMulrimData[i] !== "데이터 부족") {
+                    validX.push(disparityData[i]);
+                    validY.push(rawMulrimData[i]);
+                }
+            }
+
+            if (validX.length > 1) {
+                let sumX = 0, sumY = 0;
+                for (let i = 0; i < validX.length; i++) {
+                    sumX += validX[i];
+                    sumY += validY[i];
+                }
+                let meanX = sumX / validX.length;
+                let meanY = sumY / validY.length;
+
+                let covXY = 0, varX = 0, varY = 0;
+                for (let i = 0; i < validX.length; i++) {
+                    let dx = validX[i] - meanX;
+                    let dy = validY[i] - meanY;
+                    covXY += dx * dy;
+                    varX += dx * dx;
+                    varY += dy * dy;
+                }
+
+                if (varX > 0 && varY > 0) {
+                    let r = covXY / Math.sqrt(varX * varY);
+                    rSquared = r * r;
+                }
+            }
+
+            // 이격도 Y축 스케일러
             let maxDisp = 5, minDisp = 0;
             if (validDisparities.length > 0) {
                 maxDisp = Math.max(...validDisparities);
                 minDisp = Math.min(...validDisparities);
             }
 
-            // 오늘의 평가 패널 업데이트 로직
+            // 오늘의 평가 및 R² 패널 업데이트
             const evalPanel = document.getElementById('evaluation-panel');
             if (validDisparities.length > 0) {
                 const latestDate = cachedData.dates[cachedData.dates.length - 1];
@@ -391,16 +461,20 @@
                     riskLevel = ((latestDisparity - minDisp) / (maxDisp - minDisp)) * 100;
                 }
 
-                evalPanel.innerHTML = `오늘의 평가 (${latestDate}) : 이격 비율 <span class="eval-highlight">${latestDisparity.toFixed(2)}x</span> / 위험도 <span class="eval-highlight">${riskLevel.toFixed(1)}%</span> <span class="eval-sub">(0에 가까울 수록 매수 권장)</span>`;
+                evalPanel.innerHTML = `오늘의 평가 (${latestDate})<br>` +
+                                      `이격 비율 : <span class="eval-highlight">${latestDisparity.toFixed(2)}x</span> / ` +
+                                      `위험도 : <span class="eval-highlight">${riskLevel.toFixed(1)}%</span> <span class="eval-sub">(0%에 가까울 수록 매수 권장)</span><br>` +
+                                      `<span style="font-size:16px; color:#555; display:inline-block; margin-top:8px;">기준일수 : ${period} / R² = ${rSquared.toFixed(4)}</span>`;
                 evalPanel.style.display = 'block';
             } else {
                 evalPanel.innerHTML = `오늘의 평가 : 기준 일수(${period}일)가 전체 상장 기간보다 길어 산정할 수 없습니다.`;
                 evalPanel.style.display = 'block';
             }
 
+            // 차트 및 표 렌더링
             renderPriceChart(cachedData.dates, cachedData.prices, smaData, upperBBData, lowerBBData, period, upperMult, lowerMult);
             renderDisparityChart(cachedData.dates, disparityData, maxDisp, minDisp, period);
-            populateTable(cachedData.dates, cachedData.prices, smaData, upperBBData, lowerBBData, disparityData, period);
+            populateTable(cachedData.dates, cachedData.prices, displayMulrimData, smaData, upperBBData, lowerBBData, disparityData, period);
         }
 
         // 1. 메인 차트
@@ -552,8 +626,8 @@
             });
         }
 
-        // 데이터 표 렌더링
-        function populateTable(dates, prices, smaData, upperBBData, lowerBBData, disparityData, period) {
+        // 3. 데이터 표 렌더링
+        function populateTable(dates, prices, displayMulrimData, smaData, upperBBData, lowerBBData, disparityData, period) {
             const tableBody = document.getElementById('table-body');
             let htmlContent = '';
 
@@ -561,6 +635,7 @@
                 const date = dates[i];
                 const price = prices[i] ? prices[i].toFixed(4) : 'N/A';
                 
+                const mulrim = displayMulrimData[i] === "데이터 부족" ? `<span style="color:#e74c3c;">데이터 부족</span>` : displayMulrimData[i];
                 const sma = smaData[i] !== null ? smaData[i].toFixed(4) : '-';
                 const upperBB = upperBBData[i] !== null ? upperBBData[i].toFixed(4) : '-';
                 const lowerBB = lowerBBData[i] !== null ? lowerBBData[i].toFixed(4) : '-';
@@ -570,6 +645,7 @@
                     <tr>
                         <td>${date}</td>
                         <td>${price}</td>
+                        <td>${mulrim}</td>
                         <td>${sma}</td>
                         <td>${upperBB}</td>
                         <td>${lowerBB}</td>
