@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>주식 커스텀 분석 차트</title>
+    <title>주식 커스텀 분석 차트 및 평가</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
@@ -65,7 +65,6 @@
             text-align: center;
             font-size: 14px;
         }
-        /* 티커 입력창은 조금 더 넓게 */
         #ticker-input {
             width: 90px;
             text-transform: uppercase;
@@ -84,6 +83,29 @@
         }
         .btn:hover {
             background-color: #1a252f;
+        }
+        .evaluation-panel {
+            display: none; /* 데이터 로드 전까지 숨김 */
+            background-color: #e8f4f8;
+            border: 1px solid #bce8f1;
+            color: #31708f;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        .eval-highlight {
+            color: #e74c3c;
+            font-size: 20px;
+            margin: 0 5px;
+        }
+        .eval-sub {
+            font-size: 14px;
+            color: #555;
+            font-weight: normal;
         }
         .chart-wrapper {
             position: relative;
@@ -164,6 +186,9 @@
             <label>하한선 (-) <input type="number" id="lower-mult" step="0.1" value="0.5"></label>
             <button class="btn" onclick="handleRenderClick()">차트 불러오기 및 재계산</button>
         </div>
+
+        <div id="evaluation-panel" class="evaluation-panel">
+            </div>
         
         <div class="chart-wrapper main-chart">
             <canvas id="priceChart"></canvas>
@@ -199,7 +224,6 @@
         let cachedTicker = '';
         let cachedData = null;
 
-        // 버튼 클릭 시 실행되는 메인 컨트롤러 함수
         async function handleRenderClick() {
             const inputTicker = document.getElementById('ticker-input').value.trim().toUpperCase();
             
@@ -208,7 +232,6 @@
                 return;
             }
 
-            // 티커가 변경되었으면 새로 다운로드, 아니면 캐시된 데이터로 즉시 재계산
             if (inputTicker !== cachedTicker) {
                 await fetchNewData(inputTicker);
             } else {
@@ -216,7 +239,6 @@
             }
         }
 
-        // 야후 파이낸스에서 새로운 종목 데이터를 받아오는 함수
         async function fetchNewData(ticker) {
             const loadingEl = document.getElementById('loading');
             loadingEl.style.display = 'block';
@@ -241,7 +263,7 @@
                             const data = await response.json();
                             if (data && data.chart && data.chart.result) {
                                 dataFetched = data;
-                                break; // 성공 시 프록시 순회 중단
+                                break; 
                             }
                         }
                     } catch (error) {
@@ -269,11 +291,9 @@
                     prices.push(currentPrice);
                 }
 
-                // 글로벌 변수에 캐싱
                 cachedData = { dates: dates, prices: prices };
                 cachedTicker = ticker;
 
-                // 타이틀 업데이트
                 document.getElementById('main-title').innerText = `${ticker} Custom Analytics`;
 
                 loadingEl.style.display = 'none';
@@ -284,14 +304,12 @@
                 loadingEl.innerHTML = `[${ticker}] 데이터를 찾을 수 없거나 통신에 실패했습니다.<br><span style="font-size:14px;">상장폐지 여부나 티커명을 다시 확인해 주세요.</span>`;
                 loadingEl.style.color = '#e74c3c';
                 
-                // 3초 뒤 에러창 자동 닫기
                 setTimeout(() => {
                     loadingEl.style.display = 'none';
                 }, 3000);
             }
         }
 
-        // 입력된 설정값에 따라 지표를 계산하고 차트를 그리는 함수
         function calculateAndRender() {
             if (!cachedData) return;
 
@@ -360,6 +378,24 @@
             if (validDisparities.length > 0) {
                 maxDisp = Math.max(...validDisparities);
                 minDisp = Math.min(...validDisparities);
+            }
+
+            // 오늘의 평가 패널 업데이트 로직
+            const evalPanel = document.getElementById('evaluation-panel');
+            if (validDisparities.length > 0) {
+                const latestDate = cachedData.dates[cachedData.dates.length - 1];
+                const latestDisparity = validDisparities[validDisparities.length - 1];
+                
+                let riskLevel = 0;
+                if (maxDisp > minDisp) {
+                    riskLevel = ((latestDisparity - minDisp) / (maxDisp - minDisp)) * 100;
+                }
+
+                evalPanel.innerHTML = `오늘의 평가 (${latestDate}) : 이격 비율 <span class="eval-highlight">${latestDisparity.toFixed(2)}x</span> / 위험도 <span class="eval-highlight">${riskLevel.toFixed(1)}%</span> <span class="eval-sub">(0에 가까울 수록 매수 권장)</span>`;
+                evalPanel.style.display = 'block';
+            } else {
+                evalPanel.innerHTML = `오늘의 평가 : 기준 일수(${period}일)가 전체 상장 기간보다 길어 산정할 수 없습니다.`;
+                evalPanel.style.display = 'block';
             }
 
             renderPriceChart(cachedData.dates, cachedData.prices, smaData, upperBBData, lowerBBData, period, upperMult, lowerMult);
@@ -553,7 +589,7 @@
             }
         }
 
-        // 페이지 최초 로드 시 기본값인 TQQQ로 실행
+        // 페이지 최초 로드 시 기본값으로 실행
         handleRenderClick();
     </script>
 </body>
