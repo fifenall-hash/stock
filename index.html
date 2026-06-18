@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>주식 커스텀 분석 차트 및 평가 (R² 포함)</title>
+    <title>주식 커스텀 분석 차트 및 데이터 다운로드</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
@@ -84,6 +84,15 @@
         .btn:hover {
             background-color: #1a252f;
         }
+        .btn-download {
+            background-color: #27ae60;
+            padding: 10px 20px;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        .btn-download:hover {
+            background-color: #219653;
+        }
         .evaluation-panel {
             display: none; 
             background-color: #e8f4f8;
@@ -141,32 +150,9 @@
         .btn-container {
             text-align: center;
         }
+        /* 다운로드용 데이터를 보관하는 테이블 (화면에는 숨김) */
         #table-container {
             display: none;
-            margin-top: 20px;
-            max-height: 400px;
-            overflow-y: auto;
-            border: 1px solid #ddd;
-            border-radius: 6px;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            text-align: center;
-        }
-        th, td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            font-size: 14px;
-        }
-        th {
-            background-color: #f1f1f1;
-            position: sticky;
-            top: 0;
-            z-index: 2;
-        }
-        tr:nth-child(even) {
-            background-color: #f9f9f9;
         }
     </style>
 </head>
@@ -188,8 +174,7 @@
             <button class="btn" onclick="handleRenderClick()">차트 불러오기 및 재계산</button>
         </div>
 
-        <div id="evaluation-panel" class="evaluation-panel">
-            </div>
+        <div id="evaluation-panel" class="evaluation-panel"></div>
         
         <div class="chart-wrapper main-chart">
             <canvas id="priceChart"></canvas>
@@ -200,7 +185,7 @@
         </div>
 
         <div class="btn-container">
-            <button class="btn" style="padding: 10px 20px; font-size: 16px;" onclick="toggleTable()">일봉 Raw 데이터 표 보기/숨기기</button>
+            <button class="btn btn-download" onclick="downloadCSV()">⬇️ 일봉 Raw 데이터 표 다운로드 (.csv)</button>
         </div>
 
         <div id="table-container">
@@ -396,7 +381,7 @@
                 }
             }
 
-            // 3. 물림일수 표기 필터링 (최신 날짜와의 차이가 maxMulrim보다 작으면 '데이터 부족' 처리)
+            // 3. 물림일수 표기 필터링
             let displayMulrimData = new Array(N);
             for (let i = 0; i < N; i++) {
                 let futureDaysAvailable = (N - 1) - i;
@@ -407,12 +392,11 @@
                 }
             }
 
-            // 4. 이격도와 물림일수 간의 R² (결정계수) 계산
+            // 4. 이격도와 물림일수 간의 R² 계산
             let rSquared = 0;
             let validX = [];
             let validY = [];
             for (let i = 0; i < N; i++) {
-                // 이격도 값이 존재하고 && 물림일수가 '데이터 부족'이 아닌 날짜만 추출
                 if (disparityData[i] !== null && displayMulrimData[i] !== "데이터 부족") {
                     validX.push(disparityData[i]);
                     validY.push(rawMulrimData[i]);
@@ -443,7 +427,7 @@
                 }
             }
 
-            // 이격도 Y축 스케일러
+            // 이격도 Y축 범위
             let maxDisp = 5, minDisp = 0;
             if (validDisparities.length > 0) {
                 maxDisp = Math.max(...validDisparities);
@@ -463,7 +447,7 @@
 
                 evalPanel.innerHTML = `오늘의 평가 (${latestDate})<br>` +
                                       `이격 비율 : <span class="eval-highlight">${latestDisparity.toFixed(2)}x</span> / ` +
-                                      `위험도 : <span class="eval-highlight">${riskLevel.toFixed(1)}%</span> <span class="eval-sub">(0%에 가까울 수록 매수 권장)</span><br>` +
+                                      `위험도 : <span class="eval-highlight">${riskLevel.toFixed(1)}%</span> <span class="eval-sub">(0%에 가까울수록 매수 권장)</span><br>` +
                                       `<span style="font-size:16px; color:#555; display:inline-block; margin-top:8px;">기준일수 : ${period} / R² = ${rSquared.toFixed(4)}</span>`;
                 evalPanel.style.display = 'block';
             } else {
@@ -471,96 +455,35 @@
                 evalPanel.style.display = 'block';
             }
 
-            // 차트 및 표 렌더링
+            // 차트 렌더링
             renderPriceChart(cachedData.dates, cachedData.prices, smaData, upperBBData, lowerBBData, period, upperMult, lowerMult);
             renderDisparityChart(cachedData.dates, disparityData, maxDisp, minDisp, period);
+            
+            // CSV 다운로드를 위한 백그라운드 표 생성 (화면엔 안보임)
             populateTable(cachedData.dates, cachedData.prices, displayMulrimData, smaData, upperBBData, lowerBBData, disparityData, period);
         }
 
         // 1. 메인 차트
         function renderPriceChart(labels, priceData, smaData, upperBBData, lowerBBData, period, upperMult, lowerMult) {
             const ctx = document.getElementById('priceChart').getContext('2d');
-            
-            if (window.priceChartInstance) {
-                window.priceChartInstance.destroy();
-            }
+            if (window.priceChartInstance) window.priceChartInstance.destroy();
             
             window.priceChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: labels,
                     datasets: [
-                        {
-                            label: `${cachedTicker} 수정종가`,
-                            data: priceData,
-                            borderColor: '#3498db',
-                            backgroundColor: 'rgba(52, 152, 219, 0.1)',
-                            borderWidth: 2,
-                            pointRadius: 0,
-                            tension: 0.1,
-                            order: 1
-                        },
-                        {
-                            label: `${period}일 이동평균선`,
-                            data: smaData,
-                            borderColor: '#f1c40f',
-                            borderWidth: 2,
-                            pointRadius: 0,
-                            tension: 0.1,
-                            spanGaps: true,
-                            order: 2
-                        },
-                        {
-                            label: `BB 상한 (${upperMult}σ)`,
-                            data: upperBBData,
-                            borderColor: '#95a5a6',
-                            borderWidth: 1.5,
-                            borderDash: [5, 5],
-                            pointRadius: 0,
-                            tension: 0.1,
-                            spanGaps: true,
-                            order: 3
-                        },
-                        {
-                            label: `BB 하한 (${lowerMult}σ)`,
-                            data: lowerBBData,
-                            borderColor: '#95a5a6',
-                            borderWidth: 1.5,
-                            borderDash: [5, 5],
-                            pointRadius: 0,
-                            tension: 0.1,
-                            spanGaps: true,
-                            order: 4
-                        }
+                        { label: `${cachedTicker} 수정종가`, data: priceData, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, order: 1 },
+                        { label: `${period}일 이동평균선`, data: smaData, borderColor: '#f1c40f', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 2 },
+                        { label: `BB 상한 (${upperMult}σ)`, data: upperBBData, borderColor: '#95a5a6', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 3 },
+                        { label: `BB 하한 (${lowerMult}σ)`, data: lowerBBData, borderColor: '#95a5a6', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 4 }
                     ]
                 },
                 options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: { mode: 'index', intersect: false },
-                    plugins: {
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    let label = context.dataset.label || '';
-                                    if (label) label += ': ';
-                                    if (context.parsed.y !== null) label += context.parsed.y.toFixed(2);
-                                    return label;
-                                }
-                            }
-                        }
-                    },
+                    responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
                     scales: {
-                        x: {
-                            grid: { display: false },
-                            ticks: { maxTicksLimit: 12 }
-                        },
-                        y: {
-                            type: 'logarithmic',
-                            display: true,
-                            position: 'left',
-                            title: { display: true, text: '가격 (USD, 로그스케일)', color: '#333' }
-                        }
+                        x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } },
+                        y: { type: 'logarithmic', display: true, position: 'left', title: { display: true, text: '가격 (USD, 로그스케일)', color: '#333' } }
                     }
                 }
             });
@@ -569,64 +492,27 @@
         // 2. 서브 차트 (이격도)
         function renderDisparityChart(labels, disparityData, maxDisp, minDisp, period) {
             const ctx = document.getElementById('disparityChart').getContext('2d');
-            
-            if (window.disparityChartInstance) {
-                window.disparityChartInstance.destroy();
-            }
+            if (window.disparityChartInstance) window.disparityChartInstance.destroy();
             
             window.disparityChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: labels,
                     datasets: [
-                        {
-                            label: `${period}일 이격 비율 (배수)`,
-                            data: disparityData,
-                            borderColor: '#e74c3c',
-                            backgroundColor: 'rgba(231, 76, 60, 0.1)',
-                            borderWidth: 2, 
-                            pointRadius: 0,
-                            tension: 0.1,
-                            spanGaps: true,
-                            fill: true
-                        }
+                        { label: `${period}일 이격 비율 (배수)`, data: disparityData, borderColor: '#e74c3c', backgroundColor: 'rgba(231, 76, 60, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, fill: true }
                     ]
                 },
                 options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: { mode: 'index', intersect: false },
-                    plugins: {
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    let label = context.dataset.label || '';
-                                    if (label) label += ': ';
-                                    if (context.parsed.y !== null) label += context.parsed.y.toFixed(2) + 'x';
-                                    return label;
-                                }
-                            }
-                        }
-                    },
+                    responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
                     scales: {
-                        x: {
-                            grid: { display: false },
-                            ticks: { maxTicksLimit: 12 }
-                        },
-                        y: {
-                            type: 'linear',
-                            display: true,
-                            position: 'right',
-                            title: { display: true, text: '이격 비율 (현재가/이평선)', color: '#e74c3c' },
-                            min: minDisp, 
-                            max: maxDisp 
-                        }
+                        x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } },
+                        y: { type: 'linear', display: true, position: 'right', title: { display: true, text: '이격 비율 (현재가/이평선)', color: '#e74c3c' }, min: minDisp, max: maxDisp }
                     }
                 }
             });
         }
 
-        // 3. 데이터 표 렌더링
+        // 3. 백그라운드 테이블 구성 로직 (CSV 생성용)
         function populateTable(dates, prices, displayMulrimData, smaData, upperBBData, lowerBBData, disparityData, period) {
             const tableBody = document.getElementById('table-body');
             let htmlContent = '';
@@ -634,12 +520,11 @@
             for (let i = dates.length - 1; i >= 0; i--) {
                 const date = dates[i];
                 const price = prices[i] ? prices[i].toFixed(4) : 'N/A';
-                
-                const mulrim = displayMulrimData[i] === "데이터 부족" ? `<span style="color:#e74c3c;">데이터 부족</span>` : displayMulrimData[i];
+                const mulrim = displayMulrimData[i]; 
                 const sma = smaData[i] !== null ? smaData[i].toFixed(4) : '-';
                 const upperBB = upperBBData[i] !== null ? upperBBData[i].toFixed(4) : '-';
                 const lowerBB = lowerBBData[i] !== null ? lowerBBData[i].toFixed(4) : '-';
-                const disparity = disparityData[i] !== null ? disparityData[i].toFixed(4) : `<span style="color:#999;">데이터 부족(${period}일 미만)</span>`;
+                const disparity = disparityData[i] !== null ? disparityData[i].toFixed(4) : '데이터 부족';
 
                 htmlContent += `
                     <tr>
@@ -656,13 +541,38 @@
             tableBody.innerHTML = htmlContent;
         }
 
-        function toggleTable() {
-            const container = document.getElementById('table-container');
-            if (container.style.display === 'none' || container.style.display === '') {
-                container.style.display = 'block';
-            } else {
-                container.style.display = 'none';
+        // 4. CSV 다운로드 기능
+        function downloadCSV() {
+            const table = document.getElementById('data-table');
+            // 엑셀에서 한글이 깨지지 않도록 BOM(Byte Order Mark) 추가
+            let csvContent = "\uFEFF"; 
+            
+            // 테이블의 모든 행(가장 최신 날짜가 위로 정렬됨)을 순회하며 CSV 포맷 구성
+            for (let i = 0; i < table.rows.length; i++) {
+                let row = table.rows[i];
+                let rowData = [];
+                
+                for (let j = 0; j < row.cells.length; j++) {
+                    // innerText를 사용하여 불필요한 HTML 태그를 깔끔하게 제거
+                    let cellText = row.cells[j].innerText;
+                    // 엑셀 텍스트 오류 방지를 위해 양쪽에 따옴표 삽입
+                    cellText = '"' + cellText.replace(/"/g, '""') + '"';
+                    rowData.push(cellText);
+                }
+                csvContent += rowData.join(",") + "\n";
             }
+            
+            // Blob 객체 생성 및 자동 다운로드 링크 실행
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", `${cachedTicker}_일봉데이터_분석.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
         }
 
         // 페이지 최초 로드 시 기본값으로 실행
