@@ -3,14 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>주식 커스텀 분석 차트</title>
+    <title>주식 커스텀 분석 차트 (심층 분석 기능 추가)</title>
     
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#2c3e50">
     
     <link rel="shortcut icon" href="icon.ico" type="image/x-icon">
     <link rel="icon" href="icon.ico" type="image/x-icon">
-    
     <link rel="apple-touch-icon" href="icon.png">
     
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -107,24 +106,17 @@
             cursor: pointer;
             transition: background-color 0.3s;
             flex: 1 1 auto;
-            min-width: 140px;
         }
         .btn:hover {
             background-color: #1a252f;
         }
-        .btn-optimize {
-            background-color: #8e44ad;
-        }
-        .btn-optimize:hover {
-            background-color: #732d91;
-        }
-        .btn-download {
-            background-color: #27ae60;
-            margin-top: 10px;
-        }
-        .btn-download:hover {
-            background-color: #219653;
-        }
+        .btn-optimize { background-color: #8e44ad; }
+        .btn-optimize:hover { background-color: #732d91; }
+        .btn-info { background-color: #2980b9; }
+        .btn-info:hover { background-color: #2471a3; }
+        .btn-download { background-color: #27ae60; margin-top: 10px; }
+        .btn-download:hover { background-color: #219653; }
+        
         .evaluation-panel {
             display: none; 
             background-color: #e8f4f8;
@@ -155,18 +147,12 @@
             width: 100%;
             margin-bottom: 20px;
         }
-        .main-chart {
-            height: 45vh;
-            min-height: 350px;
-        }
-        .sub-chart {
-            height: 30vh;
-            min-height: 250px;
-        }
+        .main-chart { height: 45vh; min-height: 350px; }
+        .sub-chart { height: 30vh; min-height: 250px; }
+        
         #loading {
             position: fixed;
-            top: 50%;
-            left: 50%;
+            top: 50%; left: 50%;
             transform: translate(-50%, -50%);
             font-size: 16px;
             color: #3498db;
@@ -182,13 +168,10 @@
             width: 80%;
             max-width: 300px;
         }
-        .btn-container {
-            text-align: center;
-        }
-        #table-container {
-            display: none;
-        }
+        .btn-container { text-align: center; }
+        #table-container { display: none; }
 
+        /* 모달창 CSS 공통 */
         .modal-overlay {
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
@@ -202,29 +185,22 @@
             background: white;
             padding: 20px;
             border-radius: 12px;
-            width: 90%;
-            max-width: 800px;
+            width: 95%;
+            max-width: 900px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.3);
             text-align: center;
         }
         .opt-chart-container {
             position: relative;
-            height: 250px;
+            height: 350px;
             width: 100%;
             margin-bottom: 15px;
-        }
-        .opt-result-text {
-            font-size: 16px;
-            font-weight: bold;
-            margin: 15px 0;
-            color: #2c3e50;
-            line-height: 1.5;
         }
         .modal-actions {
             display: flex;
             justify-content: center;
             gap: 10px;
-            margin-top: 10px;
+            margin-top: 15px;
         }
     </style>
 </head>
@@ -238,10 +214,34 @@
             <div class="opt-chart-container">
                 <canvas id="optimizerChart"></canvas>
             </div>
-            <p id="opt-result-text" class="opt-result-text">수백만 번의 시뮬레이션을 진행하고 있습니다...</p>
+            <p id="opt-result-text" style="font-size:16px; font-weight:bold; margin:15px 0;">수백만 번의 시뮬레이션을 진행하고 있습니다...</p>
             <div class="modal-actions">
                 <button id="opt-apply-btn" class="btn btn-download" style="display:none; margin:0;" onclick="applyOptimization()">적용하기</button>
-                <button class="btn" style="margin:0;" onclick="closeOptimizer()">닫기</button>
+                <button class="btn" style="margin:0;" onclick="closeModal('optimizer-modal')">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="timeseries-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 style="font-size: 18px; margin-top: 0; color:#2c3e50;">📅 날짜별 이격도 & 물림일수 추이</h2>
+            <div class="opt-chart-container">
+                <canvas id="timeseriesChart"></canvas>
+            </div>
+            <div class="modal-actions">
+                <button class="btn" style="margin:0;" onclick="closeModal('timeseries-modal')">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="scatter-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 style="font-size: 18px; margin-top: 0; color:#2c3e50;">📈 상관관계 산점도 및 추세선</h2>
+            <div class="opt-chart-container">
+                <canvas id="scatterChart"></canvas>
+            </div>
+            <div class="modal-actions">
+                <button class="btn" style="margin:0;" onclick="closeModal('scatter-modal')">닫기</button>
             </div>
         </div>
     </div>
@@ -266,8 +266,12 @@
             <label>하한선(-) <input type="number" id="lower-mult" step="0.1" value="0.5"></label>
             
             <div class="btn-group">
-                <button class="btn" onclick="handleRenderClick()">데이터 불러오기 및 재계산</button>
+                <button class="btn" onclick="handleRenderClick()">데이터 갱신 및 재계산</button>
                 <button class="btn btn-optimize" onclick="openOptimizer()">💡 이격도 최적화 계산기</button>
+            </div>
+            <div class="btn-group" style="margin-top: 5px;">
+                <button class="btn btn-info" onclick="openTimeseriesModal()">📅 이격도 vs 물림일수 차트</button>
+                <button class="btn btn-info" onclick="openScatterModal()">📈 산점도 (이격도-물림일수)</button>
             </div>
         </div>
 
@@ -315,17 +319,21 @@
         let cachedTicker = '';
         let cachedCompanyName = 'TQQQ';
         let cachedData = null;
+        
+        // 차트 인스턴스 전역 변수 관리
         let optChartInstance = null;
+        let timeseriesChartInstance = null;
+        let scatterChartInstance = null;
         let bestOptimizedPeriod = 1500;
+
+        // 메인 분석 결과를 저장하여 모달에서 공유하기 위한 전역 객체
+        window.currentAnalysis = null;
 
         async function handleRenderClick() {
             let rawTicker = document.getElementById('ticker-input').value.trim().toUpperCase();
             const marketSuffix = document.getElementById('market-select').value;
             
-            if (!rawTicker) {
-                alert('티커명 혹은 6자리 종목코드를 입력해주세요.');
-                return;
-            }
+            if (!rawTicker) return alert('티커명 혹은 6자리 종목코드를 입력해주세요.');
 
             let inputTicker = rawTicker;
             if (marketSuffix !== "" && !rawTicker.includes(".")) {
@@ -361,14 +369,9 @@
                         const response = await fetch(proxy, { method: 'GET', headers: { 'Accept': 'application/json' }});
                         if (response.ok) {
                             const data = await response.json();
-                            if (data && data.chart && data.chart.result) {
-                                dataFetched = data;
-                                break; 
-                            }
+                            if (data && data.chart && data.chart.result) { dataFetched = data; break; }
                         }
-                    } catch (error) {
-                        console.warn(`Proxy fail:`, error);
-                    }
+                    } catch (error) { console.warn(`Proxy fail:`, error); }
                 }
 
                 if (!dataFetched) throw new Error('모든 프록시에서 데이터 로드 실패');
@@ -381,17 +384,12 @@
                 const timestamps = result.timestamp;
                 const priceDataArray = result.indicators.adjclose ? result.indicators.adjclose[0].adjclose : result.indicators.quote[0].close;
 
-                let dates = [];
-                let prices = [];
-
+                let dates = []; let prices = [];
                 for (let i = 0; i < timestamps.length; i++) {
                     const currentPrice = priceDataArray[i];
                     if (!currentPrice || currentPrice <= 0 || !Number.isFinite(currentPrice)) continue;
-
                     const dateObj = new Date(timestamps[i] * 1000);
-                    const dateStr = dateObj.toISOString().split('T')[0];
-                    
-                    dates.push(dateStr);
+                    dates.push(dateObj.toISOString().split('T')[0]);
                     prices.push(currentPrice);
                 }
 
@@ -401,18 +399,14 @@
                 for (let i = 0; i < N; i++) {
                     let count = 0;
                     let currentPrice = prices[i];
-                    for (let j = i + 1; j < N; j++) {
-                        if (prices[j] < currentPrice) count++;
-                    }
+                    for (let j = i + 1; j < N; j++) { if (prices[j] < currentPrice) count++; }
                     rawMulrimData[i] = count;
                     if (count > maxMulrim) maxMulrim = count;
                 }
 
                 cachedData = { dates: dates, prices: prices, rawMulrimData: rawMulrimData, maxMulrim: maxMulrim };
                 cachedTicker = ticker;
-
                 document.getElementById('main-title').innerText = `${companyName} Analytics`;
-
                 loadingEl.style.display = 'none';
                 calculateAndRender(); 
 
@@ -431,13 +425,7 @@
             const upperMult = parseFloat(document.getElementById('upper-mult').value) || 3.0;
             const lowerMult = parseFloat(document.getElementById('lower-mult').value) || 0.5;
 
-            let smaData = [];
-            let upperBBData = [];
-            let lowerBBData = [];
-            let disparityData = [];
-            let validDisparities = [];
-            let windowPrices = [];
-
+            let smaData = [], upperBBData = [], lowerBBData = [], disparityData = [], validDisparities = [], windowPrices = [];
             const N = cachedData.prices.length;
             const maxMulrim = cachedData.maxMulrim;
             const rawMulrimData = cachedData.rawMulrimData;
@@ -445,12 +433,10 @@
             for (let i = 0; i < N; i++) {
                 const currentPrice = cachedData.prices[i];
                 windowPrices.push(currentPrice);
-
                 if (windowPrices.length > period) windowPrices.shift();
 
                 if (windowPrices.length === period) {
-                    const sum = windowPrices.reduce((a, b) => a + b, 0);
-                    const average = sum / period;
+                    const average = windowPrices.reduce((a, b) => a + b, 0) / period;
                     let sqSum = 0;
                     for (let j = 0; j < period; j++) sqSum += Math.pow(windowPrices[j] - average, 2);
                     const stdDev = Math.sqrt(sqSum / period);
@@ -461,33 +447,19 @@
                         upperBBData.push(average + (upperMult * stdDev));
                         lowerBBData.push(Math.max(average - (lowerMult * stdDev), 0.0001));
                         
-                        if (Number.isFinite(disparity)) {
-                            disparityData.push(disparity);
-                            validDisparities.push(disparity);
-                        } else disparityData.push(null);
-                    } else {
-                        smaData.push(null); upperBBData.push(null); lowerBBData.push(null); disparityData.push(null);
-                    }
-                } else {
-                    smaData.push(null); upperBBData.push(null); lowerBBData.push(null); disparityData.push(null);
-                }
+                        if (Number.isFinite(disparity)) { disparityData.push(disparity); validDisparities.push(disparity); } 
+                        else disparityData.push(null);
+                    } else { smaData.push(null); upperBBData.push(null); lowerBBData.push(null); disparityData.push(null); }
+                } else { smaData.push(null); upperBBData.push(null); lowerBBData.push(null); disparityData.push(null); }
             }
 
             let avgDisparity = validDisparities.length > 0 ? validDisparities.reduce((a, b) => a + b, 0) / validDisparities.length : 0;
-
-            let disparityBaseLineData = [];
-            let disparityAvgLineData = [];
-            let priceAvgDisparityLineData = [];
-            let upperBBDisparityData = [];
-            let lowerBBDisparityData = [];
+            let disparityBaseLineData = [], disparityAvgLineData = [], priceAvgDisparityLineData = [], upperBBDisparityData = [], lowerBBDisparityData = [];
 
             for (let i = 0; i < N; i++) {
                 if (disparityData[i] !== null) {
-                    disparityBaseLineData.push(1.0); 
-                    disparityAvgLineData.push(avgDisparity); 
-                    priceAvgDisparityLineData.push(smaData[i] * avgDisparity); 
-                    upperBBDisparityData.push(upperBBData[i] / smaData[i]);
-                    lowerBBDisparityData.push(lowerBBData[i] / smaData[i]);
+                    disparityBaseLineData.push(1.0); disparityAvgLineData.push(avgDisparity); priceAvgDisparityLineData.push(smaData[i] * avgDisparity); 
+                    upperBBDisparityData.push(upperBBData[i] / smaData[i]); lowerBBDisparityData.push(lowerBBData[i] / smaData[i]);
                 } else {
                     disparityBaseLineData.push(null); disparityAvgLineData.push(null); priceAvgDisparityLineData.push(null);
                     upperBBDisparityData.push(null); lowerBBDisparityData.push(null);
@@ -495,15 +467,21 @@
             }
 
             let displayMulrimData = new Array(N);
+            let safeMulrimData = new Array(N); // 모달 차트용 순수 숫자 배열
             for (let i = 0; i < N; i++) {
-                if ((N - 1) - i < maxMulrim) displayMulrimData[i] = "데이터 부족";
-                else displayMulrimData[i] = rawMulrimData[i];
+                if ((N - 1) - i < maxMulrim) {
+                    displayMulrimData[i] = "데이터 부족";
+                    safeMulrimData[i] = null;
+                } else {
+                    displayMulrimData[i] = rawMulrimData[i];
+                    safeMulrimData[i] = rawMulrimData[i];
+                }
             }
 
             let rSquared = 0, slope = 0, intercept = 0, validX = [], validY = [];
             for (let i = 0; i < N; i++) {
-                if (disparityData[i] !== null && displayMulrimData[i] !== "데이터 부족") {
-                    validX.push(disparityData[i]); validY.push(rawMulrimData[i]);
+                if (disparityData[i] !== null && safeMulrimData[i] !== null) {
+                    validX.push(disparityData[i]); validY.push(safeMulrimData[i]);
                 }
             }
 
@@ -531,6 +509,18 @@
                 minDisp = Math.min(...validDisparities, 1.0, avgDisparity, ...validLower);
             }
 
+            // 결과를 글로벌 객체에 저장하여 모달 차트가 접근할 수 있게 함
+            window.currentAnalysis = {
+                dates: cachedData.dates,
+                disparity: disparityData,
+                mulrim: safeMulrimData,
+                slope: slope,
+                intercept: intercept,
+                minDisp: minDisp,
+                maxDisp: maxDisp,
+                period: period
+            };
+
             const evalPanel = document.getElementById('evaluation-panel');
             if (validDisparities.length > 0) {
                 const latestDate = cachedData.dates[cachedData.dates.length - 1];
@@ -554,30 +544,23 @@
             populateTable(cachedData.dates, cachedData.prices, displayMulrimData, smaData, upperBBData, lowerBBData, disparityData, period);
         }
 
+        // 공통 X축 설정 (연도별 세로선 및 눈금)
         function getYearlyTicksConfig() {
             return {
-                autoSkip: false,
-                maxRotation: 0,
+                autoSkip: false, maxRotation: 0,
                 callback: function(val, index) {
                     const currentLabel = this.getLabelForValue(val);
                     if (index === 0) return currentLabel;
                     const prevLabel = this.getLabelForValue(val - 1);
-                    const currYear = currentLabel.substring(0, 4);
-                    const prevYear = prevLabel.substring(0, 4);
-                    if (currYear !== prevYear) return currYear + '-01'; 
+                    if (currentLabel.substring(0, 4) !== prevLabel.substring(0, 4)) return currentLabel.substring(0, 4) + '-01'; 
                     return null;
                 }
             };
         }
-
         function getYearlyGridConfig() {
             return {
-                display: true,
-                drawOnChartArea: true,
-                color: function(context) {
-                    if (context.tick.label) return 'rgba(200, 200, 200, 0.4)';
-                    return 'rgba(0,0,0,0)'; 
-                }
+                display: true, drawOnChartArea: true,
+                color: function(context) { return context.tick.label ? 'rgba(200, 200, 200, 0.4)' : 'rgba(0,0,0,0)'; }
             };
         }
 
@@ -590,10 +573,10 @@
                     labels: labels,
                     datasets: [
                         { label: `${cachedCompanyName} 수정종가`, data: priceData, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, order: 1 },
-                        { label: `평균 이격 위치 (SMA × ${avgDisparity.toFixed(2)})`, data: priceAvgLineData, borderColor: '#000000', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 2 },
+                        { label: `평균 이격 위치`, data: priceAvgLineData, borderColor: '#000000', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 2 },
                         { label: `${period}일 이동평균선`, data: smaData, borderColor: '#f1c40f', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 3 },
-                        { label: `BB 상한 (${upperMult}σ)`, data: upperBBData, borderColor: '#95a5a6', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 4 },
-                        { label: `BB 하한 (${lowerMult}σ)`, data: lowerBBData, borderColor: '#95a5a6', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 5 }
+                        { label: `BB 상한`, data: upperBBData, borderColor: '#95a5a6', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 4 },
+                        { label: `BB 하한`, data: lowerBBData, borderColor: '#95a5a6', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 5 }
                     ]
                 },
                 options: { 
@@ -615,10 +598,10 @@
                     labels: labels,
                     datasets: [ 
                         { label: `${period}일 이격 비율`, data: disparityData, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, fill: true, order: 1 },
-                        { label: `평균 이격도 (${avgDisparity.toFixed(2)}x)`, data: avgLineData, borderColor: '#000000', borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true, order: 2 },
+                        { label: `평균 이격도`, data: avgLineData, borderColor: '#000000', borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true, order: 2 },
                         { label: `이평선 기준 (1.0x)`, data: baseLineData, borderColor: '#f1c40f', borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true, order: 3 },
-                        { label: `BB 이격 상한 (${upperMult}σ)`, data: upperBBDisparityData, borderColor: '#95a5a6', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 4 },
-                        { label: `BB 이격 하한 (${lowerMult}σ)`, data: lowerBBDisparityData, borderColor: '#95a5a6', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 5 }
+                        { label: `BB 상한`, data: upperBBDisparityData, borderColor: '#95a5a6', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 4 },
+                        { label: `BB 하한`, data: lowerBBDisparityData, borderColor: '#95a5a6', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 5 }
                     ]
                 },
                 options: { 
@@ -631,6 +614,89 @@
             });
         }
 
+        // --- 새로 추가된 모달(팝업) 차트 제어 로직 ---
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+
+        function openTimeseriesModal() {
+            if (!window.currentAnalysis) return alert('먼저 데이터를 계산해주세요.');
+            document.getElementById('timeseries-modal').style.display = 'flex';
+            
+            const ctx = document.getElementById('timeseriesChart').getContext('2d');
+            if (timeseriesChartInstance) timeseriesChartInstance.destroy();
+
+            timeseriesChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: window.currentAnalysis.dates,
+                    datasets: [
+                        { label: '이격 비율 (좌측)', data: window.currentAnalysis.disparity, borderColor: '#3498db', yAxisID: 'y', pointRadius: 0, tension: 0.1, spanGaps: true },
+                        { label: '물림일수 (우측)', data: window.currentAnalysis.mulrim, borderColor: '#e74c3c', yAxisID: 'y1', pointRadius: 0, tension: 0.1, spanGaps: true }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        x: { grid: getYearlyGridConfig(), ticks: getYearlyTicksConfig() },
+                        y: { type: 'linear', position: 'left', title: { display: true, text: '이격 비율 (배수)', color: '#3498db' }, min: window.currentAnalysis.minDisp, max: window.currentAnalysis.maxDisp },
+                        y1: { type: 'linear', position: 'right', title: { display: true, text: '물림일수 (일)', color: '#e74c3c' }, grid: { drawOnChartArea: false } }
+                    }
+                }
+            });
+        }
+
+        function openScatterModal() {
+            if (!window.currentAnalysis) return alert('먼저 데이터를 계산해주세요.');
+            document.getElementById('scatter-modal').style.display = 'flex';
+            
+            const ctx = document.getElementById('scatterChart').getContext('2d');
+            if (scatterChartInstance) scatterChartInstance.destroy();
+
+            let scatterData = [];
+            for(let i=0; i<window.currentAnalysis.dates.length; i++) {
+                if(window.currentAnalysis.disparity[i] !== null && window.currentAnalysis.mulrim[i] !== null) {
+                    scatterData.push({ x: window.currentAnalysis.disparity[i], y: window.currentAnalysis.mulrim[i] });
+                }
+            }
+
+            let minX = window.currentAnalysis.minDisp;
+            let maxX = window.currentAnalysis.maxDisp;
+            let slope = window.currentAnalysis.slope;
+            let intercept = window.currentAnalysis.intercept;
+            
+            // 추세선 데이터 (시작점과 끝점)
+            let trendlineData = [
+                { x: minX, y: slope * minX + intercept },
+                { x: maxX, y: slope * maxX + intercept }
+            ];
+
+            scatterChartInstance = new Chart(ctx, {
+                data: {
+                    datasets: [
+                        { type: 'scatter', label: '과거 일별 데이터', data: scatterData, backgroundColor: 'rgba(52, 152, 219, 0.4)', pointRadius: 3, pointHoverRadius: 5 },
+                        { type: 'line', label: '추세선 (Regression)', data: trendlineData, borderColor: '#e74c3c', borderWidth: 2, pointRadius: 0, fill: false }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) { return `이격도: ${context.parsed.x.toFixed(2)}x, 물림일수: ${context.parsed.y}일`; }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { type: 'linear', position: 'bottom', title: { display: true, text: '이격 비율 (배수)' }, min: minX, max: maxX },
+                        y: { title: { display: true, text: '물림일수 (일)' }, beginAtZero: true }
+                    }
+                }
+            });
+        }
+
+        // --- 기타 UI 및 최적화 로직 ---
         function populateTable(dates, prices, displayMulrimData, smaData, upperBBData, lowerBBData, disparityData, period) {
             const tableBody = document.getElementById('table-body');
             let htmlContent = '';
@@ -680,8 +746,6 @@
             setTimeout(() => { runOptimization(); }, 100);
         }
 
-        function closeOptimizer() { document.getElementById('optimizer-modal').style.display = 'none'; }
-
         function getFastR2ForPeriod(period) {
             const N = cachedData.prices.length;
             let validX = [], validY = [], sum = 0;
@@ -714,7 +778,11 @@
 
         function runOptimization() {
             const maxTestPeriod = Math.min(3000, cachedData.prices.length - cachedData.maxMulrim - 30);
-            if (maxTestPeriod < 1) return alert("상장 기간이 짧아 데이터를 충분히 확보할 수 없으므로 최적화를 수행할 수 없습니다.") || closeOptimizer();
+            if (maxTestPeriod < 1) {
+                alert("상장 기간이 짧아 데이터를 충분히 확보할 수 없으므로 최적화를 수행할 수 없습니다.");
+                closeModal('optimizer-modal');
+                return;
+            }
 
             let labels = [], r2Data = [], maxR2 = -1, bestPeriod = 1; 
             for (let p = 1; p <= maxTestPeriod; p += 1) {
@@ -744,7 +812,7 @@
 
         function applyOptimization() {
             document.getElementById('ma-period').value = bestOptimizedPeriod;
-            closeOptimizer();
+            closeModal('optimizer-modal');
             calculateAndRender();
         }
 
