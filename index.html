@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>주식 커스텀 분석 차트 (심층 분석 기능 추가)</title>
+    <title>주식 커스텀 분석 차트 (심층 분석 및 종가 표시)</title>
     
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#2c3e50">
@@ -320,13 +320,11 @@
         let cachedCompanyName = 'TQQQ';
         let cachedData = null;
         
-        // 차트 인스턴스 전역 변수 관리
         let optChartInstance = null;
         let timeseriesChartInstance = null;
         let scatterChartInstance = null;
         let bestOptimizedPeriod = 1500;
 
-        // 메인 분석 결과를 저장하여 모달에서 공유하기 위한 전역 객체
         window.currentAnalysis = null;
 
         async function handleRenderClick() {
@@ -467,7 +465,7 @@
             }
 
             let displayMulrimData = new Array(N);
-            let safeMulrimData = new Array(N); // 모달 차트용 순수 숫자 배열
+            let safeMulrimData = new Array(N); 
             for (let i = 0; i < N; i++) {
                 if ((N - 1) - i < maxMulrim) {
                     displayMulrimData[i] = "데이터 부족";
@@ -509,7 +507,6 @@
                 minDisp = Math.min(...validDisparities, 1.0, avgDisparity, ...validLower);
             }
 
-            // 결과를 글로벌 객체에 저장하여 모달 차트가 접근할 수 있게 함
             window.currentAnalysis = {
                 dates: cachedData.dates,
                 disparity: disparityData,
@@ -524,13 +521,20 @@
             const evalPanel = document.getElementById('evaluation-panel');
             if (validDisparities.length > 0) {
                 const latestDate = cachedData.dates[cachedData.dates.length - 1];
+                const latestPrice = cachedData.prices[cachedData.prices.length - 1]; // 최신 종가 가져오기
                 const latestDisparity = validDisparities[validDisparities.length - 1];
                 let riskLevel = maxDisp > minDisp ? ((latestDisparity - minDisp) / (maxDisp - minDisp)) * 100 : 0;
                 let expectedMulrim = Math.max(0, Math.round(slope * latestDisparity + intercept)) || 0;
 
+                // [핵심 업데이트] 오늘의 평가 패널에 현재 주가(수정종가) 추가
                 evalPanel.innerHTML = `오늘의 평가 (${latestDate})<br>` +
-                                      `<div style="margin: 10px 0;">이격 비율 : <span class="eval-highlight">${latestDisparity.toFixed(2)}x</span> &nbsp;|&nbsp; ` +
-                                      `위험도 : <span class="eval-highlight">${riskLevel.toFixed(1)}%</span></div>` +
+                                      `<div style="margin: 10px 0; display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap: 8px;">` +
+                                      `<span>주가 : <span class="eval-highlight">${latestPrice.toFixed(2)}</span></span>` + 
+                                      `<span style="color:#bdc3c7;">|</span>` +
+                                      `<span>이격 비율 : <span class="eval-highlight">${latestDisparity.toFixed(2)}x</span></span>` + 
+                                      `<span style="color:#bdc3c7;">|</span>` +
+                                      `<span>위험도 : <span class="eval-highlight">${riskLevel.toFixed(1)}%</span></span>` +
+                                      `</div>` +
                                       `추세선(회귀분석) 기반 예상 물림일수 : <span class="eval-highlight">약 ${expectedMulrim}일</span><br>` +
                                       `<span style="font-size:14px; color:#7f8c8d; display:inline-block; margin-top:10px;">기준일수: ${period}일 / R²: ${rSquared.toFixed(4)} / 평균 이격도: ${avgDisparity.toFixed(2)}x</span>`;
                 evalPanel.style.display = 'block';
@@ -544,7 +548,7 @@
             populateTable(cachedData.dates, cachedData.prices, displayMulrimData, smaData, upperBBData, lowerBBData, disparityData, period);
         }
 
-        // 공통 X축 설정 (연도별 세로선 및 눈금)
+        // 공통 X축 설정
         function getYearlyTicksConfig() {
             return {
                 autoSkip: false, maxRotation: 0,
@@ -614,7 +618,7 @@
             });
         }
 
-        // --- 새로 추가된 모달(팝업) 차트 제어 로직 ---
+        // --- 모달(팝업) 차트 제어 로직 ---
         function closeModal(modalId) {
             document.getElementById(modalId).style.display = 'none';
         }
@@ -666,7 +670,6 @@
             let slope = window.currentAnalysis.slope;
             let intercept = window.currentAnalysis.intercept;
             
-            // 추세선 데이터 (시작점과 끝점)
             let trendlineData = [
                 { x: minX, y: slope * minX + intercept },
                 { x: maxX, y: slope * maxX + intercept }
@@ -681,13 +684,7 @@
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false,
-                    plugins: {
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) { return `이격도: ${context.parsed.x.toFixed(2)}x, 물림일수: ${context.parsed.y}일`; }
-                            }
-                        }
-                    },
+                    plugins: { tooltip: { callbacks: { label: function(context) { return `이격도: ${context.parsed.x.toFixed(2)}x, 물림일수: ${context.parsed.y}일`; } } } },
                     scales: {
                         x: { type: 'linear', position: 'bottom', title: { display: true, text: '이격 비율 (배수)' }, min: minX, max: maxX },
                         y: { title: { display: true, text: '물림일수 (일)' }, beginAtZero: true }
@@ -696,7 +693,6 @@
             });
         }
 
-        // --- 기타 UI 및 최적화 로직 ---
         function populateTable(dates, prices, displayMulrimData, smaData, upperBBData, lowerBBData, disparityData, period) {
             const tableBody = document.getElementById('table-body');
             let htmlContent = '';
