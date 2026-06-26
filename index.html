@@ -5,17 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>주식 커스텀 분석 차트 (심층 분석 및 종가 표시)</title>
     
+    <!-- PWA (모바일 앱) 설정을 위한 태그 -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#2c3e50">
     
+    <!-- 크롬 북마크, 브라우저 탭용 아이콘 (.ico) -->
     <link rel="shortcut icon" href="icon.ico" type="image/x-icon">
     <link rel="icon" href="icon.ico" type="image/x-icon">
+    <!-- 모바일 PWA 및 애플/iOS 기기 홈화면용 고해상도 아이콘 (.png) -->
     <link rel="apple-touch-icon" href="icon.png">
     
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Stock Analytics">
 
+    <!-- Chart.js 로드 -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
@@ -208,6 +212,7 @@
 
     <div id="loading">데이터를 불러오는 중입니다...</div>
 
+    <!-- 최적화 계산기 모달창 -->
     <div id="optimizer-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 style="font-size: 18px; margin-top: 0;">📈 이격도 최적화 분석기 (정밀)</h2>
@@ -222,6 +227,7 @@
         </div>
     </div>
 
+    <!-- 1. 시간흐름 비교 모달창 -->
     <div id="timeseries-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 style="font-size: 18px; margin-top: 0; color:#2c3e50;">📅 날짜별 이격도 & 물림일수 추이</h2>
@@ -234,6 +240,7 @@
         </div>
     </div>
 
+    <!-- 2. 산점도 모달창 -->
     <div id="scatter-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 style="font-size: 18px; margin-top: 0; color:#2c3e50;">📈 상관관계 산점도 및 추세선</h2>
@@ -521,12 +528,11 @@
             const evalPanel = document.getElementById('evaluation-panel');
             if (validDisparities.length > 0) {
                 const latestDate = cachedData.dates[cachedData.dates.length - 1];
-                const latestPrice = cachedData.prices[cachedData.prices.length - 1]; // 최신 종가 가져오기
+                const latestPrice = cachedData.prices[cachedData.prices.length - 1]; 
                 const latestDisparity = validDisparities[validDisparities.length - 1];
                 let riskLevel = maxDisp > minDisp ? ((latestDisparity - minDisp) / (maxDisp - minDisp)) * 100 : 0;
                 let expectedMulrim = Math.max(0, Math.round(slope * latestDisparity + intercept)) || 0;
 
-                // [핵심 업데이트] 오늘의 평가 패널에 현재 주가(수정종가) 추가
                 evalPanel.innerHTML = `오늘의 평가 (${latestDate})<br>` +
                                       `<div style="margin: 10px 0; display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap: 8px;">` +
                                       `<span>주가 : <span class="eval-highlight">${latestPrice.toFixed(2)}</span></span>` + 
