@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -665,10 +666,43 @@
             if (scatterChartInstance) scatterChartInstance.destroy();
 
             let scatterData = [];
+            let scatterColors = []; // 무지개 그라데이션 색상을 저장할 배열
+            let validIndices = [];
+
+            // 1. 유효한 데이터 인덱스 수집
             for(let i=0; i<window.currentAnalysis.dates.length; i++) {
                 if(window.currentAnalysis.disparity[i] !== null && window.currentAnalysis.mulrim[i] !== null) {
-                    scatterData.push({ x: window.currentAnalysis.disparity[i], y: window.currentAnalysis.mulrim[i] });
+                    validIndices.push(i);
                 }
+            }
+
+            // 2. 점 생성 및 시간에 따른 무지개 그라데이션 색상 매핑 계산
+            const N_valid = validIndices.length;
+            for(let k = 0; k < N_valid; k++) {
+                let i = validIndices[k];
+                scatterData.push({ x: window.currentAnalysis.disparity[i], y: window.currentAnalysis.mulrim[i] });
+
+                // t: 0(과거) ~ 1(최신)
+                let t = N_valid > 1 ? k / (N_valid - 1) : 0; 
+                let v = t * 4; // 4단계 구간으로 분할 (빨강 -> 노랑 -> 초록 -> 하늘 -> 파랑)
+                let r, g, b;
+
+                if (v <= 1) {
+                    // 빨강(255,0,0) -> 노랑(255,255,0)
+                    r = 255; g = Math.round(v * 255); b = 0;
+                } else if (v <= 2) {
+                    // 노랑(255,255,0) -> 초록(0,255,0)
+                    r = Math.round(255 - (v - 1) * 255); g = 255; b = 0;
+                } else if (v <= 3) {
+                    // 초록(0,255,0) -> 하늘(0,255,255)
+                    r = 0; g = 255; b = Math.round((v - 2) * 255);
+                } else {
+                    // 하늘(0,255,255) -> 파랑(0,0,255)
+                    r = 0; g = Math.round(255 - (v - 3) * 255); b = 255;
+                }
+                
+                // 점이 서로 겹쳤을 때 보기 편하도록 약간의 투명도(0.6) 부여
+                scatterColors.push(`rgba(${r}, ${g}, ${b}, 0.6)`);
             }
 
             let minX = window.currentAnalysis.minDisp;
@@ -684,8 +718,23 @@
             scatterChartInstance = new Chart(ctx, {
                 data: {
                     datasets: [
-                        { type: 'scatter', label: '과거 일별 데이터', data: scatterData, backgroundColor: 'rgba(52, 152, 219, 0.4)', pointRadius: 3, pointHoverRadius: 5 },
-                        { type: 'line', label: '추세선 (Regression)', data: trendlineData, borderColor: '#e74c3c', borderWidth: 2, pointRadius: 0, fill: false }
+                        { 
+                            type: 'scatter', 
+                            label: '과거 일별 데이터 (적색:과거 → 청색:최신)', 
+                            data: scatterData, 
+                            backgroundColor: scatterColors, // 동적 계산된 배열 적용
+                            pointRadius: 4, 
+                            pointHoverRadius: 6 
+                        },
+                        { 
+                            type: 'line', 
+                            label: '추세선 (Regression)', 
+                            data: trendlineData, 
+                            borderColor: '#e74c3c', 
+                            borderWidth: 2, 
+                            pointRadius: 0, 
+                            fill: false 
+                        }
                     ]
                 },
                 options: {
@@ -822,3 +871,6 @@
     </script>
 </body>
 </html>
+
+
+```
