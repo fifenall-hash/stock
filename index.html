@@ -167,8 +167,9 @@
         }
         .eval-capital {
             color: #d35400;
-            font-size: 26px;
-            margin: 0 3px;
+            font-size: 28px;
+            margin: 5px 0;
+            display: inline-block;
         }
         .chart-wrapper {
             position: relative;
@@ -613,7 +614,20 @@
             }
             let finalCapital = capitalHistory[N - 1];
 
-            // 4. 물림일수
+            // CAGR 및 날짜 연산
+            const startDateStr = cachedData.dates[0];
+            const endDateStr = cachedData.dates[N - 1];
+            const startDt = new Date(startDateStr);
+            const endDt = new Date(endDateStr);
+            const diffTime = Math.abs(endDt - startDt);
+            const totalDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            let totalYears = totalDays / 365.2425;
+            if (totalYears <= 0) totalYears = 0.001; // 에러 방지
+            
+            const cagr = (Math.pow(finalCapital / initialCap, 1 / totalYears) - 1) * 100;
+
+            // 4. 물림일수 필터링
             let displayMulrimData = new Array(N);
             let safeMulrimData = new Array(N); 
             for (let i = 0; i < N; i++) {
@@ -671,9 +685,11 @@
                 let riskLevel = maxDisp > minDisp ? ((latestDisparity - minDisp) / (maxDisp - minDisp)) * 100 : 0;
                 let expectedMulrim = Math.max(0, Math.round(slope * latestDisparity + intercept)) || 0;
 
-                simPanel.innerHTML = `<div style="font-size: 16px; color:#7f8c8d;">📊 시뮬레이션 최종 자본</div>` +
-                                     `<div class="eval-capital" style="margin-top: 5px;">${finalCapital.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</div>` +
-                                     `<div style="font-size: 14px; font-weight: normal; color: #7f8c8d;">(초기 자본: ${initialCap.toLocaleString()})</div>`;
+                simPanel.innerHTML = `<div style="font-size: 16px; color:#7f8c8d; margin-bottom:5px;">📊 시뮬레이션 결과</div>` +
+                                     `<div style="font-size: 14px; font-weight: normal; color: #555;">기간: ${startDateStr} ~ ${endDateStr}</div>` +
+                                     `<div style="font-size: 14px; font-weight: normal; color: #555; margin-bottom:8px;">(<span style="color:#2c3e50; font-weight:bold;">${totalYears.toFixed(2)}년</span> / ${totalDays}일)</div>` +
+                                     `<div class="eval-capital">${finalCapital.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</div>` +
+                                     `<div style="font-size: 14px; font-weight: normal; color: #7f8c8d; margin-top:5px;">초기 자본: ${initialCap.toLocaleString()} <span style="margin: 0 5px;">|</span> CAGR: <span style="color:#e74c3c; font-weight:bold;">${cagr.toFixed(2)}%</span></div>`;
                 simPanel.style.display = 'block';
 
                 evalPanel.innerHTML = `오늘의 현황 (${latestDate})<br>` +
@@ -697,7 +713,6 @@
             populateTable(cachedData.dates, cachedData.prices, displayMulrimData, smaData, disparityData, tradeActions, capitalHistory, period);
         }
 
-        // --- [완전 무결성 확보] 에러 원천 차단형 연도별 틱 계산기 ---
         function getYearlyTicksConfig() {
             return {
                 autoSkip: false,
@@ -707,7 +722,6 @@
                         const labels = this.chart.data.labels;
                         if (!labels) return null;
                         
-                        // 줌 플러그인에 의해 생성된 소수점(가상) 인덱스 무시 처리
                         if (Math.floor(val) !== val) return null; 
                         
                         const label = labels[val];
@@ -718,13 +732,12 @@
                         const prevLabel = labels[val - 1];
                         if (!prevLabel || prevLabel.length < 4) return null;
                         
-                        // 연도가 바뀌는 지점에서만 라벨 노출
                         if (label.substring(0, 4) !== prevLabel.substring(0, 4)) {
                             return label.substring(0, 4) + '-01';
                         }
                         return null;
                     } catch(e) {
-                        return null; // 예외 발생 시 빈 화면이 되는 것을 방지
+                        return null; 
                     }
                 }
             };
@@ -736,7 +749,6 @@
                 drawOnChartArea: true,
                 color: function(context) {
                     try {
-                        // 줌 이벤트 도중 라벨 객체가 준비되지 않았을 때의 예외 차단
                         if (context.tick && context.tick.label && context.tick.label.length > 0) {
                             return 'rgba(200, 200, 200, 0.4)';
                         }
@@ -987,8 +999,10 @@
         function openTradeOptimizer() {
             if (!cachedData) return alert('먼저 데이터를 불러와주세요.');
             openModal('trade-optimizer-modal');
+            
             window.selectedPointFromChart = null;
             document.getElementById('custom-apply-btn').disabled = true;
+
             document.getElementById('trade-opt-apply-btn').style.display = 'none';
             document.getElementById('trade-opt-result-text').innerText = '수만 가지 조합의 딥 시뮬레이션을 진행 중입니다...';
             setTimeout(() => { runTradeOptimization(); }, 100);
@@ -1025,8 +1039,7 @@
                 return alert("데이터가 너무 적어 최적화할 수 없습니다.");
             }
 
-            // 시뮬레이션 처리량 최적화를 위해 스텝을 0.05배수 간격으로 조정하여 브라우저 부하 방지
-            let step = 0.05; 
+            let step = 0.02; 
             let startD = Math.floor(minD * 100) / 100;
             let endD = Math.ceil(maxD * 100) / 100;
 
@@ -1068,7 +1081,8 @@
                     }
                     
                     let finalCap = cash + (shares * cachedData.prices[N - 1]);
-                    results.push({ x: buyPt, y: sellPt, v: finalCap });
+                    // [핵심 변경] x축과 y축의 데이터를 맞바꾸어 담음 (buy/sell 명확히 분리)
+                    results.push({ buy: buyPt, sell: sellPt, v: finalCap });
 
                     if (finalCap > maxFinalCapital) {
                         maxFinalCapital = finalCap;
@@ -1088,7 +1102,9 @@
             let scatterColors = [];
             
             for (let item of results) {
-                scatterData.push({ x: item.x, y: item.y });
+                // [핵심 변경] 그래프 상에서 X축은 Sell, Y축은 Buy로 표시
+                scatterData.push({ x: item.sell, y: item.buy });
+                
                 let t = (maxFinalCapital === minFinalCapital) ? 0 : (maxFinalCapital - item.v) / (maxFinalCapital - minFinalCapital);
                 let v = t * 4; 
                 let r, g, b;
@@ -1117,18 +1133,20 @@
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false,
-                    interaction: { mode: 'nearest', intersect: true },
+                    interaction: { mode: 'nearest', intersect: true, axis: 'xy' },
                     onClick: function(e, elements) {
                         if (elements.length > 0) {
                             const idx = elements[0].index;
                             const item = results[idx];
-                            window.selectedPointFromChart = { buy: item.x, sell: item.y };
+                            
+                            // 선택 정보 업데이트
+                            window.selectedPointFromChart = { buy: item.buy, sell: item.sell };
                             document.getElementById('custom-apply-btn').disabled = false;
                             
                             document.getElementById('trade-opt-result-text').innerHTML = 
                                 `최고 효율 매수: <span style="color:#27ae60;">${bestBuy}x</span> 이하 / 매도: <span style="color:#e74c3c;">${bestSell}x</span> 이상<br>`+
                                 `이때의 예상 최고 자본: <span style="color:#d35400;">${maxFinalCapital.toLocaleString(undefined, {maximumFractionDigits:2})}</span><br><br>`+
-                                `<span style="color:#2980b9; font-size:15px; font-weight:bold;">[선택된 타점] 매수: ${item.x}x / 매도: ${item.y}x (최종자본: ${item.v.toLocaleString(undefined, {maximumFractionDigits:2})})</span>`;
+                                `<span style="color:#2980b9; font-size:15px; font-weight:bold;">[선택된 타점] 매수: ${item.buy}x / 매도: ${item.sell}x (최종자본: ${item.v.toLocaleString(undefined, {maximumFractionDigits:2})})</span>`;
                         }
                     },
                     plugins: {
@@ -1138,14 +1156,16 @@
                                 label: function(context) {
                                     let idx = context.dataIndex;
                                     let cap = results[idx].v;
-                                    return `매수: ${context.parsed.x}x, 매도: ${context.parsed.y}x | 자산: ${cap.toLocaleString(undefined, {maximumFractionDigits:0})}`;
+                                    // [핵심 변경] 툴팁 내용 수정
+                                    return `매도: ${context.parsed.x.toFixed(2)}x, 매수: ${context.parsed.y.toFixed(2)}x | 자산: ${cap.toLocaleString(undefined, {maximumFractionDigits:0})}`;
                                 }
                             }
                         }
                     },
                     scales: {
-                        x: { title: { display: true, text: '매수 기준선 (Buy)' } },
-                        y: { title: { display: true, text: '매도 기준선 (Sell)' } }
+                        // [핵심 변경] 축 이름 변경
+                        x: { title: { display: true, text: '매도 기준선 (Sell)' } },
+                        y: { title: { display: true, text: '매수 기준선 (Buy)' } }
                     }
                 }
             });
