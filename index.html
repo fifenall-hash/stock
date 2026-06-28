@@ -35,7 +35,7 @@
             touch-action: pan-y !important; /* 위아래 스크롤 허용, 좌우는 차트 이동 */
         }
         #scatterChart, #tradeOptimizerChart {
-            touch-action: none !important; /* 모달창 내 산점도는 전체 터치 제어 허용 */
+            touch-action: none !important; 
         }
 
         .widget-container {
@@ -262,7 +262,7 @@
             </div>
             <p id="trade-opt-result-text" style="font-size:16px; font-weight:bold; margin:15px 0;">모든 매수/매도 조합을 시뮬레이션 중입니다...</p>
             <div class="modal-actions">
-                <button id="trade-opt-apply-btn" class="btn btn-trade-opt" style="display:none; margin:0;" onclick="applyTradeOptimization()">최고 효율 타점 적용하기</button>
+                <button id="trade-opt-apply-btn" class="btn btn-trade-opt" style="display:none; margin:0;" onclick="applyTradeOptimization()">최적 타점 적용하기</button>
                 <button id="custom-apply-btn" class="btn btn-apply-selected" style="margin:0;" disabled onclick="applySelectedPoint()">해당 타점 적용하기</button>
                 <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(tradeOptChartInstance)">🔍 줌 초기화</button>
                 <button class="btn" style="margin:0;" onclick="closeModal('trade-optimizer-modal')">닫기</button>
@@ -393,7 +393,6 @@
         window.currentAnalysis = null;
         window.selectedPointFromChart = null; 
 
-        // --- 공통 모달 및 Zoom 제어 로직 ---
         function openModal(modalId) {
             document.getElementById(modalId).style.display = 'flex';
             document.body.style.overflow = 'hidden';
@@ -415,7 +414,6 @@
             resetChartZoom(disparityChartInstance);
         }
 
-        // 플러그인 Zoom 옵션 설정 (안정화 됨)
         const zoomPluginX = {
             pan: { enabled: true, mode: 'x' },
             zoom: { 
@@ -459,50 +457,76 @@
         async function fetchNewData(ticker) {
             const loadingEl = document.getElementById('loading');
             loadingEl.style.display = 'block';
-            loadingEl.innerHTML = `${ticker} 데이터를 불러오는 중입니다...<br><span style="font-size:14px; color:#7f8c8d;">(야후 서버 응답 대기 중)</span>`;
+            loadingEl.innerHTML = `${ticker} 일봉 데이터를 추출 중입니다...<br><span style="font-size:14px; color:#7f8c8d;">(야후 CSV 우회 엔진 가동 중)</span>`;
             loadingEl.style.color = '#3498db';
 
-            // [핵심 수정] 15일 간격 점프 방지 (range=max, interval=1d 사용)
-            const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=max&interval=1d`;
+            const currentUnixTime = Math.floor(Date.now() / 1000); 
+
+            // 1. 차트 제목용 회사 메타데이터 가져오기 (JSON 단기 조회)
+            let companyName = ticker;
+            try {
+                const metaUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=1d&interval=1d`;
+                const metaProxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(metaUrl)}`;
+                const metaRes = await fetch(metaProxy);
+                if (metaRes.ok) {
+                    const metaJson = await metaRes.json();
+                    if (metaJson.chart && metaJson.chart.result) {
+                        const meta = metaJson.chart.result[0].meta;
+                        companyName = meta.shortName || meta.longName || ticker;
+                    }
+                }
+            } catch(e) { console.warn("메타데이터 로드 실패, 티커명 대체"); }
+            cachedCompanyName = companyName;
+
+            // [핵심 변경] 2. 월간 병합 현상을 완벽히 차단하는 야후 다운로드(CSV) 전용 API 사용
+            const csvUrl = `https://query1.finance.yahoo.com/v7/finance/download/${ticker}?period1=0&period2=${currentUnixTime}&interval=1d&events=history`;
 
             const proxyList = [
-                `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
-                `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
-                `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
+                `https://api.allorigins.win/raw?url=${encodeURIComponent(csvUrl)}`,
+                `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(csvUrl)}`,
+                `https://corsproxy.io/?${encodeURIComponent(csvUrl)}`
             ];
 
             try {
-                let dataFetched = null;
+                let csvText = null;
                 for (let proxy of proxyList) {
                     try {
-                        const response = await fetch(proxy, { method: 'GET', headers: { 'Accept': 'application/json' }});
+                        const response = await fetch(proxy, { method: 'GET' });
                         if (response.ok) {
-                            const data = await response.json();
-                            if (data && data.chart && data.chart.result) { dataFetched = data; break; }
+                            const text = await response.text();
+                            // 올바른 CSV 포맷이 수신되었는지 확인
+                            if (text && text.includes("Date,Open,High,Low,Close")) { 
+                                csvText = text; 
+                                break; 
+                            }
                         }
                     } catch (error) { console.warn(`Proxy fail:`, error); }
                 }
 
-                if (!dataFetched) throw new Error('데이터 로드 실패');
+                if (!csvText) throw new Error('순수 일봉 CSV 데이터 로드 실패');
 
-                const result = dataFetched.chart.result[0];
-                const meta = result.meta;
-                const companyName = meta.shortName || meta.longName || ticker;
-                cachedCompanyName = companyName;
-
-                const timestamps = result.timestamp;
-                const priceDataArray = result.indicators.adjclose ? result.indicators.adjclose[0].adjclose : result.indicators.quote[0].close;
-
+                // CSV 문자열 파싱
                 let dates = []; let prices = [];
-                for (let i = 0; i < timestamps.length; i++) {
-                    const currentPrice = priceDataArray[i];
-                    if (!currentPrice || currentPrice <= 0 || !Number.isFinite(currentPrice)) continue;
-                    const dateObj = new Date(timestamps[i] * 1000);
-                    dates.push(dateObj.toISOString().split('T')[0]);
-                    prices.push(currentPrice);
+                const lines = csvText.trim().split('\n');
+                
+                for (let i = 1; i < lines.length; i++) {
+                    const cols = lines[i].split(',');
+                    // CSV 구조: Date,Open,High,Low,Close,Adj Close,Volume
+                    if (cols.length >= 6) {
+                        const dateStr = cols[0];
+                        let p = parseFloat(cols[5]); // 수정종가 우선
+                        if (isNaN(p) || p <= 0) p = parseFloat(cols[4]); // 오류 시 일반 종가
+                        
+                        if (!isNaN(p) && p > 0) {
+                            dates.push(dateStr);
+                            prices.push(p);
+                        }
+                    }
                 }
 
                 const N = prices.length;
+                if (N === 0) throw new Error("유효한 가격 데이터가 없습니다.");
+
                 let rawMulrimData = new Array(N).fill(0);
                 let maxMulrim = 0;
                 for (let i = 0; i < N; i++) {
@@ -521,7 +545,7 @@
 
             } catch (error) {
                 console.error(error);
-                loadingEl.innerHTML = `데이터 통신에 실패했습니다.<br><span style="font-size:13px;">상장폐지 여부나 종목코드를 다시 확인해 주세요.</span>`;
+                loadingEl.innerHTML = `데이터 추출 실패<br><span style="font-size:13px;">티커명이나 상장 상태를 다시 확인해 주세요.</span>`;
                 loadingEl.style.color = '#e74c3c';
                 setTimeout(() => { loadingEl.style.display = 'none'; }, 3000);
             }
@@ -585,7 +609,7 @@
                 }
             }
 
-            // 3. 백테스트
+            // 3. 백테스트 (초기 자본 전액 주식 보유 상태 반영)
             let firstValidIdx = disparityData.findIndex(d => d !== null);
             if (firstValidIdx === -1) firstValidIdx = 0; 
 
@@ -721,33 +745,46 @@
             populateTable(cachedData.dates, cachedData.prices, displayMulrimData, smaData, disparityData, tradeActions, capitalHistory, period);
         }
 
+        // --- [핵심 개선] 줌인 상태에 맞춰 동적으로 라벨 표시를 조절하는 똑똑한 틱(Tick) 구성 함수 ---
         function getYearlyTicksConfig() {
             return {
                 autoSkip: false,
                 maxRotation: 0,
-                callback: function(val, index) {
+                callback: function(val, index, ticks) {
                     try {
                         const labels = this.chart.data.labels;
                         if (!labels) return null;
                         
-                        // 줌 플러그인용 안전장치 (가상의 소수점 틱은 무시)
+                        // 줌 플러그인용 가상(소수점) 인덱스 무시
                         if (Math.floor(val) !== val) return null; 
                         
-                        const label = labels[val];
-                        if (!label || label.length < 4) return null;
+                        const label = labels[val]; // 예: '2023-01-05'
+                        if (!label || label.length < 10) return null;
+                        
+                        // 차트에 현재 표시되고 있는 틱(데이터 포인트)의 개수
+                        const visibleTicksCount = ticks.length;
 
-                        if (val === 0) return label.substring(0, 4) + '-01';
-                        
-                        const prevLabel = labels[val - 1];
-                        if (!prevLabel || prevLabel.length < 4) return null;
-                        
-                        if (label.substring(0, 4) !== prevLabel.substring(0, 4)) {
-                            return label.substring(0, 4) + '-01';
+                        // 1. 크게 확대됨 (약 2달치 이내) -> 모든 날짜 표시
+                        if (visibleTicksCount < 60) {
+                            return label; 
+                        } 
+                        // 2. 중간 확대됨 (약 1년치 이내) -> 월 단위(매달 초) 표시
+                        else if (visibleTicksCount < 300) {
+                            const day = parseInt(label.substring(8, 10));
+                            if (day <= 3) return label.substring(0, 7); // 예: '2023-01'
+                            return null;
+                        } 
+                        // 3. 전체 화면 (수년~수십 년) -> 연도 단위로 표시
+                        else {
+                            if (val === 0) return label.substring(0, 4) + '-01';
+                            const prevLabel = labels[val - 1];
+                            if (!prevLabel) return null;
+                            if (label.substring(0, 4) !== prevLabel.substring(0, 4)) {
+                                return label.substring(0, 4) + '-01';
+                            }
+                            return null;
                         }
-                        return null;
-                    } catch(e) {
-                        return null; 
-                    }
+                    } catch(e) { return null; }
                 }
             };
         }
