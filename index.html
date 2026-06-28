@@ -2,26 +2,49 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TQQQ 일봉 차트 및 1500일 이격도</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>주식 커스텀 분석 및 매매 최적화 시스템</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2c3e50">
+    <link rel="shortcut icon" href="icon.ico" type="image/x-icon">
+    <link rel="icon" href="icon.ico" type="image/x-icon">
+    <link rel="apple-touch-icon" href="icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Stock Analytics">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
+
     <style>
         body {
             margin: 0;
-            padding: 20px;
+            padding: 10px;
             background-color: #f8f9fa;
             font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
             display: flex;
             flex-direction: column;
             align-items: center;
+            overflow-x: hidden;
         }
+        
+        /* 터치 및 스크롤 충돌 방지 */
+        canvas {
+            touch-action: pan-y !important; /* 위아래 스크롤 허용, 좌우는 차트 이동 */
+        }
+        #scatterChart, #tradeOptimizerChart {
+            touch-action: none !important; 
+        }
+
         .widget-container {
             width: 100%;
             max-width: 1200px;
             background: #ffffff;
             border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            padding: 15px;
             box-sizing: border-box;
         }
         .header {
@@ -31,95 +54,298 @@
         h1 {
             margin: 0 0 10px 0;
             color: #2c3e50;
-            font-size: 24px;
+            font-size: 22px;
         }
         p {
             margin: 0;
             color: #7f8c8d;
-            font-size: 14px;
+            font-size: 13px;
         }
-        .chart-wrapper {
-            position: relative;
-            height: 50vh;
-            min-height: 400px;
-            width: 100%;
+        .control-panel {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            align-items: center;
             margin-bottom: 20px;
-        }
-        #loading {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            font-size: 18px;
-            color: #3498db;
-            font-weight: bold;
-            text-align: center;
-            line-height: 1.5;
-            z-index: 10;
-            background: rgba(255,255,255,0.9);
-            padding: 20px;
+            background: #f1f2f6;
+            padding: 15px;
             border-radius: 8px;
         }
-        .btn-container {
+        .control-panel label {
+            font-size: 13px;
+            font-weight: bold;
+            color: #2c3e50;
+            display: flex;
+            align-items: center;
+        }
+        .control-panel input, .control-panel select {
+            padding: 6px;
+            margin-left: 5px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
             text-align: center;
-            margin-bottom: 20px;
+            font-size: 14px;
+            color: #2c3e50;
+        }
+        .control-panel input[type="number"] {
+            width: 70px;
+        }
+        #ticker-input {
+            width: 80px;
+            text-transform: uppercase;
+            font-weight: bold;
+            color: #e74c3c;
+        }
+        .btn-group {
+            width: 100%;
+            text-align: center;
+            margin-top: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 8px;
         }
         .btn {
             background-color: #2c3e50;
             color: white;
             border: none;
-            padding: 10px 20px;
-            font-size: 16px;
+            padding: 10px 16px;
+            font-size: 14px;
             border-radius: 6px;
             cursor: pointer;
             transition: background-color 0.3s;
+            flex: 1 1 auto;
         }
-        .btn:hover {
-            background-color: #1a252f;
+        .btn:hover { background-color: #1a252f; }
+        .btn-optimize { background-color: #8e44ad; }
+        .btn-optimize:hover { background-color: #732d91; }
+        .btn-trade-opt { background-color: #d35400; }
+        .btn-trade-opt:hover { background-color: #a04000; }
+        .btn-info { background-color: #2980b9; }
+        .btn-info:hover { background-color: #2471a3; }
+        .btn-apply-selected { background-color: #2980b9; }
+        .btn-apply-selected:hover { background-color: #1f618d; }
+        .btn-apply-selected:disabled { background-color: #bdc3c7; cursor: not-allowed; }
+        .btn-reset { background-color: #7f8c8d; }
+        .btn-reset:hover { background-color: #636e72; }
+        .btn-download { background-color: #27ae60; margin-top: 10px; }
+        .btn-download:hover { background-color: #219653; }
+        
+        .evaluation-panel {
+            display: none; 
+            background-color: #e8f4f8;
+            border: 1px solid #bce8f1;
+            color: #31708f;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            line-height: 1.8;
+            word-break: keep-all;
         }
-        #table-container {
-            display: none;
-            max-height: 400px;
-            overflow-y: auto;
-            border: 1px solid #ddd;
-            border-radius: 6px;
+        .simulation-panel {
+            display: none; 
+            background-color: #fdfbf7;
+            border: 1px solid #f5b041;
+            color: #2c3e50;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            line-height: 1.6;
         }
-        table {
+        .eval-highlight {
+            color: #e74c3c;
+            font-size: 20px;
+            margin: 0 3px;
+        }
+        .eval-capital {
+            color: #d35400;
+            font-size: 28px;
+            margin: 5px 0;
+            display: inline-block;
+        }
+        .chart-wrapper {
+            position: relative;
             width: 100%;
-            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        .main-chart { height: 45vh; min-height: 350px; }
+        .sub-chart { height: 30vh; min-height: 250px; }
+        
+        #loading {
+            position: fixed;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 16px;
+            color: #3498db;
+            font-weight: bold;
+            text-align: center;
+            line-height: 1.5;
+            z-index: 1000;
+            background: rgba(255,255,255,0.95);
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            display: none;
+            width: 80%;
+            max-width: 300px;
+        }
+        .btn-container { text-align: center; }
+        #table-container { display: none; }
+
+        /* 모달창 CSS 공통 */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+        }
+        .modal-content {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            width: 95%;
+            max-width: 900px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
             text-align: center;
         }
-        th, td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            font-size: 14px;
+        .opt-chart-container {
+            position: relative;
+            height: 350px;
+            width: 100%;
+            margin-bottom: 15px;
         }
-        th {
-            background-color: #f1f1f1;
-            position: sticky;
-            top: 0;
-            z-index: 2;
-        }
-        tr:nth-child(even) {
-            background-color: #f9f9f9;
+        .modal-actions {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 15px;
+            flex-wrap: wrap;
         }
     </style>
 </head>
 <body>
 
+    <div id="loading">데이터를 불러오는 중입니다...</div>
+
+    <div id="optimizer-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 style="font-size: 18px; margin-top: 0;">📈 기준일수 최적화 분석기 (R² 기반)</h2>
+            <div class="opt-chart-container">
+                <canvas id="optimizerChart"></canvas>
+            </div>
+            <p id="opt-result-text" style="font-size:16px; font-weight:bold; margin:15px 0;">연산 중입니다...</p>
+            <div class="modal-actions">
+                <button id="opt-apply-btn" class="btn btn-download" style="display:none; margin:0;" onclick="applyOptimization()">적용하기</button>
+                <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(optChartInstance)">🔍 줌 초기화</button>
+                <button class="btn" style="margin:0;" onclick="closeModal('optimizer-modal')">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="trade-optimizer-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 style="font-size: 18px; margin-top: 0; color:#d35400;">📊 매수/매도 타점 최적화</h2>
+            <div class="opt-chart-container">
+                <canvas id="tradeOptimizerChart"></canvas>
+            </div>
+            <p id="trade-opt-result-text" style="font-size:16px; font-weight:bold; margin:15px 0;">모든 매수/매도 조합을 시뮬레이션 중입니다...</p>
+            <div class="modal-actions">
+                <button id="trade-opt-apply-btn" class="btn btn-trade-opt" style="display:none; margin:0;" onclick="applyTradeOptimization()">최적 타점 적용하기</button>
+                <button id="custom-apply-btn" class="btn btn-apply-selected" style="margin:0;" disabled onclick="applySelectedPoint()">해당 타점 적용하기</button>
+                <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(tradeOptChartInstance)">🔍 줌 초기화</button>
+                <button class="btn" style="margin:0;" onclick="closeModal('trade-optimizer-modal')">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="timeseries-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 style="font-size: 18px; margin-top: 0; color:#2c3e50;">📅 날짜별 이격도 & 물림일수 추이</h2>
+            <div class="opt-chart-container">
+                <canvas id="timeseriesChart"></canvas>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(timeseriesChartInstance)">🔍 줌 초기화</button>
+                <button class="btn" style="margin:0;" onclick="closeModal('timeseries-modal')">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="scatter-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 style="font-size: 18px; margin-top: 0; color:#2c3e50;">📈 상관관계 산점도 및 추세선</h2>
+            <div class="opt-chart-container">
+                <canvas id="scatterChart"></canvas>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(scatterChartInstance)">🔍 줌 초기화</button>
+                <button class="btn" style="margin:0;" onclick="closeModal('scatter-modal')">닫기</button>
+            </div>
+        </div>
+    </div>
+
     <div class="widget-container">
         <div class="header">
-            <h1>TQQQ Price & 1500-Day Disparity Ratio</h1>
-            <p>액면분할 반영 일봉(Daily) 수정종가 (파란선: 주가 / 붉은선: 1500일 이격 배수)</p>
+            <h1 id="main-title">Custom Analytics & Simulator</h1>
+            <p>매수, 매도 이격도 지점을 설정하여 최적의 수익률을 시뮬레이션 해보세요.<br><span style="font-size:12px; color:#95a5a6;">(PC: Ctrl+휠 확대 / 모바일: 두 손가락 확대)</span></p>
         </div>
+
+        <div class="control-panel">
+            <label>시장
+                <select id="market-select">
+                    <option value="">미국</option>
+                    <option value=".KS">한국(코스피)</option>
+                    <option value=".KQ">한국(코스닥)</option>
+                </select>
+            </label>
+            <label>종목 <input type="text" id="ticker-input" value="TQQQ"></label>
+            <label>이평 기준일수 <input type="number" id="ma-period" value="1500" min="1"></label>
+            
+            <div style="width: 100%; height: 0;"></div> 
+            
+            <label>초기 자본 <input type="number" id="initial-cap" value="10000" min="1"></label>
+            <label style="color:#27ae60;">매수(이하) <input type="number" id="buy-point" step="0.05" value="1.5"></label>
+            <label style="color:#e74c3c;">매도(이상) <input type="number" id="sell-point" step="0.05" value="3.0"></label>
+            
+            <div class="btn-group">
+                <button class="btn" onclick="handleRenderClick()">데이터 갱신 및 시뮬레이션</button>
+            </div>
+            <div class="btn-group" style="margin-top: 5px;">
+                <button class="btn btn-trade-opt" onclick="openTradeOptimizer()">📊 매수/매도 최적화</button>
+                <button class="btn btn-optimize" onclick="openOptimizer()">💡 기준일수 최적화 (R²)</button>
+            </div>
+            <div class="btn-group" style="margin-top: 5px;">
+                <button class="btn btn-info" onclick="openTimeseriesModal()">📅 이격도 vs 물림일수</button>
+                <button class="btn btn-info" onclick="openScatterModal()">📈 이격-물림 산점도</button>
+                <button class="btn btn-reset" onclick="resetMainChartsZoom()">🔍 차트 줌 초기화</button>
+            </div>
+        </div>
+
+        <div id="simulation-panel" class="simulation-panel"></div>
+        <div id="evaluation-panel" class="evaluation-panel"></div>
         
-        <div class="chart-wrapper">
-            <div id="loading">데이터를 분석하고 계산하는 중입니다...<br><span style="font-size:14px; color:#7f8c8d;">(최대 5초 정도 소요될 수 있습니다)</span></div>
-            <canvas id="myChart"></canvas>
+        <div class="chart-wrapper main-chart">
+            <canvas id="priceChart"></canvas>
+        </div>
+
+        <div class="chart-wrapper sub-chart">
+            <canvas id="disparityChart"></canvas>
         </div>
 
         <div class="btn-container">
-            <button class="btn" onclick="toggleTable()">일봉 Raw 데이터 표 보기/숨기기</button>
+            <button class="btn btn-download" onclick="downloadCSV()">⬇️ 일봉 데이터 표 다운로드 (.csv)</button>
         </div>
 
         <div id="table-container">
@@ -127,226 +353,834 @@
                 <thead>
                     <tr>
                         <th>날짜</th>
-                        <th>수정종가 (USD)</th>
-                        <th>1500일 이격도 (배수)</th>
+                        <th>수정종가</th>
+                        <th>N일 이평선</th>
+                        <th>N일 이격도</th>
+                        <th>물림일수(일)</th>
+                        <th>매매 상태</th>
+                        <th>총 자산</th>
                     </tr>
                 </thead>
-                <tbody id="table-body">
-                    </tbody>
+                <tbody id="table-body"></tbody>
             </table>
         </div>
     </div>
 
     <script>
-        const symbol = 'TQQQ';
-        // 핵심 수정: range=max 대신 UNIX 타임스탬프를 명시하여 야후 서버가 강제로 월봉으로 압축하는 것을 차단
-        const currentUnixTime = Math.floor(Date.now() / 1000); 
-        const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?period1=0&period2=${currentUnixTime}&interval=1d`;
+        let cachedTicker = '';
+        let cachedCompanyName = 'TQQQ';
+        let cachedData = null;
+        
+        let priceChartInstance = null;
+        let disparityChartInstance = null;
+        let optChartInstance = null;
+        let tradeOptChartInstance = null;
+        let timeseriesChartInstance = null;
+        let scatterChartInstance = null;
+        
+        let bestOptimizedPeriod = 1500;
+        let bestOptimizedBuy = 1.5;
+        let bestOptimizedSell = 3.0;
 
-        const proxyList = [
-            `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
-            `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
-            `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
-        ];
+        window.currentAnalysis = null;
+        window.selectedPointFromChart = null; 
 
-        async function fetchWithFallback() {
-            for (let proxy of proxyList) {
-                try {
-                    const response = await fetch(proxy, { method: 'GET', headers: { 'Accept': 'application/json' }});
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data && data.chart && data.chart.result) return data;
-                    }
-                } catch (error) {
-                    console.warn(`Proxy fail:`, error);
-                }
-            }
-            throw new Error('데이터 로드 실패');
+        // --- 공통 모달 및 줌 제어 로직 ---
+        function openModal(modalId) {
+            document.getElementById(modalId).style.display = 'flex';
+            document.body.style.overflow = 'hidden';
         }
 
-        async function fetchAndRenderChart() {
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+            document.body.style.overflow = 'auto';
+        }
+
+        function resetChartZoom(chartInstance) {
+            if (chartInstance) chartInstance.resetZoom();
+        }
+
+        function resetMainChartsZoom() {
+            resetChartZoom(priceChartInstance);
+            resetChartZoom(disparityChartInstance);
+        }
+
+        const zoomPluginX = {
+            pan: { enabled: true, mode: 'x' },
+            zoom: { wheel: { enabled: true, modifierKey: 'ctrl' }, pinch: { enabled: true }, mode: 'x' }
+        };
+
+        const zoomPluginXY = {
+            pan: { enabled: true, mode: 'xy' },
+            zoom: { wheel: { enabled: true, modifierKey: 'ctrl' }, pinch: { enabled: true }, mode: 'xy' }
+        };
+
+        async function handleRenderClick() {
+            let rawTicker = document.getElementById('ticker-input').value.trim().toUpperCase();
+            const marketSuffix = document.getElementById('market-select').value;
+            
+            const buyPt = parseFloat(document.getElementById('buy-point').value);
+            const sellPt = parseFloat(document.getElementById('sell-point').value);
+            
+            if (!rawTicker) return alert('티커명 혹은 6자리 종목코드를 입력해주세요.');
+            if (buyPt >= sellPt) return alert('매수 지점은 반드시 매도 지점보다 작아야 합니다.');
+
+            let inputTicker = rawTicker;
+            if (marketSuffix !== "" && !rawTicker.includes(".")) {
+                inputTicker = rawTicker + marketSuffix;
+            }
+
+            if (inputTicker !== cachedTicker) {
+                await fetchNewData(inputTicker);
+            } else {
+                calculateAndRender();
+            }
+        }
+
+        // [엔진 복구 및 보완] 안정적인 v8 JSON API 기반에 일봉 촘촘함 강제 고정 옵션 연동
+        async function fetchNewData(ticker) {
+            const loadingEl = document.getElementById('loading');
+            loadingEl.style.display = 'block';
+            loadingEl.innerHTML = `${ticker} 데이터를 정밀 추출 중입니다...<br><span style="font-size:14px; color:#7f8c8d;">(야후 차트 안정 엔진 구동 중)</span>`;
+            loadingEl.style.color = '#3498db';
+
+            // 1. [참고코드1]의 논리: 현재 시간을 Unix 타임스탬프로 변환하여 강제 압축 방지
+            const currentUnixTime = Math.floor(Date.now() / 1000); 
+            const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?period1=0&period2=${currentUnixTime}&interval=1d&includeAdjustedClose=true`;
+
+            // 2. 캐시 무효화(Cache-Busting) 추가: 프록시 서버가 과거의 압축된 데이터를 주지 못하도록 매번 고유한 파라미터 부여
+            const cacheBuster = `&_nocache=${Date.now()}`;
+    
+            const proxyList = [
+                `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl + cacheBuster)}`,
+                `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl + cacheBuster)}`,
+                `https://corsproxy.io/?${encodeURIComponent(targetUrl + cacheBuster)}`
+            ];
+
             try {
-                const rawData = await fetchWithFallback();
-                const result = rawData.chart.result[0];
-                
-                const timestamps = result.timestamp;
-                const priceDataArray = result.indicators.adjclose ? result.indicators.adjclose[0].adjclose : result.indicators.quote[0].close;
-
-                let dates = [];
-                let prices = [];
-                let disparityData = [];
-                let validDisparities = [];
-                
-                const MA_PERIOD = 1500;
-                let windowPrices = [];
-
-                for (let i = 0; i < timestamps.length; i++) {
-                    const currentPrice = priceDataArray[i];
-                    
-                    if (!currentPrice || currentPrice <= 0 || !Number.isFinite(currentPrice)) {
-                        continue;
-                    }
-
-                    const dateObj = new Date(timestamps[i] * 1000);
-                    const dateStr = dateObj.toISOString().split('T')[0];
-                    
-                    dates.push(dateStr);
-                    prices.push(currentPrice);
-                    windowPrices.push(currentPrice);
-
-                    if (windowPrices.length > MA_PERIOD) {
-                        windowPrices.shift();
-                    }
-
-                    if (windowPrices.length === MA_PERIOD) {
-                        const sum = windowPrices.reduce((a, b) => a + b, 0);
-                        const average = sum / MA_PERIOD;
-                        
-                        if (average > 0) {
-                            const disparity = currentPrice / average; 
-                            
-                            if (Number.isFinite(disparity)) {
-                                disparityData.push(disparity);
-                                validDisparities.push(disparity);
-                            } else {
-                                disparityData.push(null);
-                            }
-                        } else {
-                            disparityData.push(null);
+                let dataFetched = null;
+                for (let proxy of proxyList) {
+                    try {
+                        const response = await fetch(proxy, { method: 'GET', headers: { 'Accept': 'application/json' }});
+                        if (response.ok) {
+                            const data = await response.json();
+                            if (data && data.chart && data.chart.result) { dataFetched = data; break; }
                         }
-                    } else {
-                        disparityData.push(null);
+                    } catch (error) { console.warn(`Proxy fail:`, error); }
+                }
+
+                if (!dataFetched) throw new Error('데이터 로드 실패');
+
+                const result = dataFetched.chart.result[0];
+                const meta = result.meta;
+                const companyName = meta.shortName || meta.longName || ticker;
+                cachedCompanyName = companyName;
+
+                const timestamps = result.timestamp;
+                const quotes = result.indicators.quote[0];
+                const adjcloses = result.indicators.adjclose ? result.indicators.adjclose[0].adjclose : null;
+
+                let dates = []; let prices = [];
+                if (timestamps && timestamps.length > 0) {
+                    for (let i = 0; i < timestamps.length; i++) {
+                        let p = adjcloses ? adjcloses[i] : quotes.close[i];
+                        if (!p || p <= 0 || !Number.isFinite(p)) continue;
+
+                        const dateObj = new Date(timestamps[i] * 1000);
+                        const yyyy = dateObj.getUTCFullYear();
+                        const mm = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+                        const dd = String(dateObj.getUTCDate()).padStart(2, '0');
+
+                        dates.push(`${yyyy}-${mm}-${dd}`);
+                        prices.push(p);
                     }
                 }
 
-                const maxDisparityValue = validDisparities.length > 0 ? Math.ceil(Math.max(...validDisparities) + 1) : 5;
+                const N = prices.length;
+                if (N === 0) throw new Error("유효한 일봉 데이터가 없습니다.");
 
-                renderChart(dates, prices, disparityData, maxDisparityValue);
-                populateTable(dates, prices, disparityData);
-                document.getElementById('loading').style.display = 'none';
+                let rawMulrimData = new Array(N).fill(0);
+                let maxMulrim = 0;
+                for (let i = 0; i < N; i++) {
+                    let count = 0;
+                    let currentPrice = prices[i];
+                    for (let j = i + 1; j < N; j++) { if (prices[j] < currentPrice) count++; }
+                    rawMulrimData[i] = count;
+                    if (count > maxMulrim) maxMulrim = count;
+                }
+
+                cachedData = { dates: dates, prices: prices, rawMulrimData: rawMulrimData, maxMulrim: maxMulrim };
+                cachedTicker = ticker;
+                document.getElementById('main-title').innerText = `${companyName} 시뮬레이터`;
+                loadingEl.style.display = 'none';
+                calculateAndRender(); 
 
             } catch (error) {
                 console.error(error);
-                document.getElementById('loading').innerHTML = '데이터 연동에 실패했습니다.<br>잠시 후 다시 시도해 주세요.';
-                document.getElementById('loading').style.color = 'red';
+                loadingEl.innerHTML = `데이터 추출 실패<br><span style="font-size:13px;">티커명이나 인터넷 상태를 다시 확인해 주세요.</span>`;
+                loadingEl.style.color = '#e74c3c';
+                setTimeout(() => { loadingEl.style.display = 'none'; }, 3000);
             }
         }
 
-        function renderChart(labels, priceData, disparityData, maxDisp) {
-            const ctx = document.getElementById('myChart').getContext('2d');
-            
-            if (window.myLineChart) {
-                window.myLineChart.destroy();
+        function calculateAndRender() {
+            if (!cachedData) return;
+
+            const period = parseInt(document.getElementById('ma-period').value) || 1500;
+            const initialCap = parseFloat(document.getElementById('initial-cap').value) || 10000;
+            const buyPoint = parseFloat(document.getElementById('buy-point').value) || 1.5;
+            const sellPoint = parseFloat(document.getElementById('sell-point').value) || 3.0;
+
+            let smaData = [], disparityData = [], validDisparities = [], windowPrices = [];
+            const N = cachedData.prices.length;
+            const maxMulrim = cachedData.maxMulrim;
+            const rawMulrimData = cachedData.rawMulrimData;
+
+            for (let i = 0; i < N; i++) {
+                const currentPrice = cachedData.prices[i];
+                windowPrices.push(currentPrice);
+                if (windowPrices.length > period) windowPrices.shift();
+
+                if (windowPrices.length === period) {
+                    const average = windowPrices.reduce((a, b) => a + b, 0) / period;
+                    if (average > 0) {
+                        const disparity = currentPrice / average; 
+                        smaData.push(average);
+                        if (Number.isFinite(disparity)) { disparityData.push(disparity); validDisparities.push(disparity); } 
+                        else disparityData.push(null);
+                    } else { smaData.push(null); disparityData.push(null); }
+                } else { smaData.push(null); disparityData.push(null); }
             }
+
+            let avgDisparity = validDisparities.length > 0 ? validDisparities.reduce((a, b) => a + b, 0) / validDisparities.length : 0;
             
-            window.myLineChart = new Chart(ctx, {
+            let disparityBaseLineData = [], disparityBuyLineData = [], disparitySellLineData = [];
+            let disparityAvgLineData = [], priceAvgDisparityLineData = [];
+            let priceBuyLineData = [], priceSellLineData = [];
+
+            for (let i = 0; i < N; i++) {
+                if (disparityData[i] !== null) {
+                    disparityBaseLineData.push(1.0); 
+                    disparityAvgLineData.push(avgDisparity);
+                    disparityBuyLineData.push(buyPoint);
+                    disparitySellLineData.push(sellPoint);
+                    priceAvgDisparityLineData.push(smaData[i] * avgDisparity);
+                    priceBuyLineData.push(smaData[i] * buyPoint); 
+                    priceSellLineData.push(smaData[i] * sellPoint); 
+                } else {
+                    disparityBaseLineData.push(null); disparityAvgLineData.push(null); 
+                    disparityBuyLineData.push(null); disparitySellLineData.push(null);
+                    priceAvgDisparityLineData.push(null); priceBuyLineData.push(null); priceSellLineData.push(null);
+                }
+            }
+
+            let firstValidIdx = disparityData.findIndex(d => d !== null);
+            if (firstValidIdx === -1) firstValidIdx = 0; 
+
+            let isHolding = true;
+            let cash = 0;
+            let shares = initialCap / cachedData.prices[firstValidIdx]; 
+            
+            let tradeActions = new Array(N).fill("-");
+            let capitalHistory = new Array(N).fill(null);
+
+            tradeActions[firstValidIdx] = "초기 보유 시작";
+
+            for (let i = 0; i < firstValidIdx; i++) {
+                capitalHistory[i] = initialCap;
+            }
+
+            for (let i = firstValidIdx; i < N; i++) {
+                let d = disparityData[i];
+                let p = cachedData.prices[i];
+                
+                if (d !== null) {
+                    if (isHolding && d > sellPoint && shares > 0) {
+                        cash = shares * p;
+                        shares = 0;
+                        isHolding = false;
+                        tradeActions[i] = "매도 (Sell)";
+                    } else if (!isHolding && d < buyPoint && cash > 0) {
+                        shares = cash / p;
+                        cash = 0;
+                        isHolding = true;
+                        tradeActions[i] = "매수 (Buy)";
+                    }
+                }
+                capitalHistory[i] = cash + (shares * p);
+            }
+            let finalCapital = capitalHistory[N - 1];
+
+            const startDateStr = cachedData.dates[firstValidIdx];
+            const endDateStr = cachedData.dates[N - 1];
+            const startDt = new Date(startDateStr);
+            const endDt = new Date(endDateStr);
+            const diffTime = Math.abs(endDt - startDt);
+            const totalDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            let totalYears = totalDays / 365.2425;
+            if (totalYears <= 0) totalYears = 0.001; 
+            
+            const cagr = (Math.pow(finalCapital / initialCap, 1 / totalYears) - 1) * 100;
+
+            let displayMulrimData = new Array(N);
+            let safeMulrimData = new Array(N); 
+            for (let i = 0; i < N; i++) {
+                if ((N - 1) - i < maxMulrim) {
+                    displayMulrimData[i] = "데이터 부족";
+                    safeMulrimData[i] = null;
+                } else {
+                    displayMulrimData[i] = rawMulrimData[i];
+                    safeMulrimData[i] = rawMulrimData[i];
+                }
+            }
+
+            let rSquared = 0, slope = 0, intercept = 0, validX = [], validY = [];
+            for (let i = 0; i < N; i++) {
+                if (disparityData[i] !== null && safeMulrimData[i] !== null) {
+                    validX.push(disparityData[i]); validY.push(safeMulrimData[i]);
+                }
+            }
+
+            if (validX.length > 1) {
+                let sumX = 0, sumY = 0;
+                for (let i = 0; i < validX.length; i++) { sumX += validX[i]; sumY += validY[i]; }
+                let meanX = sumX / validX.length, meanY = sumY / validY.length;
+                let covXY = 0, varX = 0, varY = 0;
+                for (let i = 0; i < validX.length; i++) {
+                    let dx = validX[i] - meanX, dy = validY[i] - meanY;
+                    covXY += dx * dy; varX += dx * dx; varY += dy * dy;
+                }
+                if (varX > 0 && varY > 0) {
+                    rSquared = (covXY / Math.sqrt(varX * varY)) ** 2;
+                    slope = covXY / varX;
+                    intercept = meanY - slope * meanX;
+                }
+            }
+
+            let maxDisp = 5, minDisp = 0;
+            if (validDisparities.length > 0) {
+                maxDisp = Math.max(...validDisparities, 1.0, sellPoint, avgDisparity);
+                minDisp = Math.min(...validDisparities, 1.0, buyPoint, avgDisparity);
+            }
+
+            window.currentAnalysis = {
+                dates: cachedData.dates, disparity: disparityData, mulrim: safeMulrimData,
+                slope: slope, intercept: intercept, minDisp: minDisp, maxDisp: maxDisp, period: period
+            };
+
+            const simPanel = document.getElementById('simulation-panel');
+            const evalPanel = document.getElementById('evaluation-panel');
+            
+            if (validDisparities.length > 0) {
+                const latestDate = cachedData.dates[N - 1];
+                const latestPrice = cachedData.prices[N - 1]; 
+                const latestDisparity = validDisparities[validDisparities.length - 1];
+                let riskLevel = maxDisp > minDisp ? ((latestDisparity - minDisp) / (maxDisp - minDisp)) * 100 : 0;
+                let expectedMulrim = Math.max(0, Math.round(slope * latestDisparity + intercept)) || 0;
+
+                simPanel.innerHTML = `<div style="font-size: 16px; color:#7f8c8d; margin-bottom:5px;">📊 시뮬레이션 결과</div>` +
+                                     `<div style="font-size: 14px; font-weight: normal; color: #555;">실수행 기간: ${startDateStr} ~ ${endDateStr}</div>` +
+                                     `<div style="font-size: 14px; font-weight: normal; color: #555; margin-bottom:8px;">(<span style="color:#2c3e50; font-weight:bold;">${totalYears.toFixed(2)}년</span> / ${totalDays}일)</div>` +
+                                     `<div class="eval-capital">${finalCapital.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</div>` +
+                                     `<div style="font-size: 14px; font-weight: normal; color: #7f8c8d; margin-top:5px;">초기 자본: ${initialCap.toLocaleString()} <span style="margin: 0 5px;">|</span> CAGR: <span style="color:#e74c3c; font-weight:bold;">${cagr.toFixed(2)}%</span></div>`;
+                simPanel.style.display = 'block';
+
+                evalPanel.innerHTML = `오늘의 현황 (${latestDate})<br>` +
+                                      `<div style="margin: 10px 0; display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap: 8px;">` +
+                                      `<span>주가: <span class="eval-highlight">${latestPrice.toFixed(2)}</span></span>` + 
+                                      `<span style="color:#bdc3c7;">|</span>` +
+                                      `<span>이격 비율: <span class="eval-highlight">${latestDisparity.toFixed(2)}x</span></span>` + 
+                                      `<span style="color:#bdc3c7;">|</span>` +
+                                      `<span>위험도: <span class="eval-highlight">${riskLevel.toFixed(1)}%</span></span>` +
+                                      `</div>` +
+                                      `예상 물림일수(회귀기반): 약 ${expectedMulrim}일 <span style="font-size:12px; color:#7f8c8d;">(R²: ${rSquared.toFixed(3)})</span>`;
+                evalPanel.style.display = 'block';
+            } else {
+                simPanel.style.display = 'none';
+                evalPanel.innerHTML = `산정 불가: 기준 일수(${period}일)가 데이터 제공 기간보다 깁니다.`;
+                evalPanel.style.display = 'block';
+            }
+
+            renderPriceChart(cachedData.dates, cachedData.prices, smaData, priceAvgDisparityLineData, priceBuyLineData, priceSellLineData, avgDisparity, period);
+            renderDisparityChart(cachedData.dates, disparityData, disparityBaseLineData, disparityAvgLineData, disparityBuyLineData, disparitySellLineData, avgDisparity, maxDisp, minDisp, period);
+            populateTable(cachedData.dates, cachedData.prices, displayMulrimData, smaData, disparityData, tradeActions, capitalHistory, period);
+        }
+
+        // --- 줌 스케일에 유연하게 대처하는 지능형 틱 라벨링 함수 ---
+        function getYearlyTicksConfig() {
+            return {
+                autoSkip: false,
+                maxRotation: 0,
+                callback: function(val, index, ticks) {
+                    try {
+                        const labels = this.chart.data.labels;
+                        if (!labels) return null;
+                        if (Math.floor(val) !== val) return null; 
+                        
+                        const label = labels[val];
+                        if (!label || label.length < 10) return null;
+                        const visibleTicksCount = ticks.length;
+
+                        if (visibleTicksCount < 60) {
+                            return label; // 고배율 확대 시 일자 표출
+                        } else if (visibleTicksCount < 300) {
+                            const day = parseInt(label.substring(8, 10));
+                            if (day <= 3) return label.substring(0, 7); // 월 단위 표출
+                            return null;
+                        } else {
+                            if (val === 0) return label.substring(0, 4) + '-01';
+                            const prevLabel = labels[val - 1];
+                            if (!prevLabel) return null;
+                            if (label.substring(0, 4) !== prevLabel.substring(0, 4)) {
+                                return label.substring(0, 4) + '-01'; // 기본 연도 표출
+                            }
+                            return null;
+                        }
+                    } catch(e) { return null; }
+                }
+            };
+        }
+
+        function getYearlyGridConfig() {
+            return {
+                display: true, drawOnChartArea: true,
+                color: function(context) {
+                    try {
+                        if (context.tick && context.tick.label && context.tick.label.length > 0) return 'rgba(200, 200, 200, 0.4)';
+                        return 'rgba(0,0,0,0)';
+                    } catch(e) { return 'rgba(0,0,0,0)'; }
+                }
+            };
+        }
+
+        function renderPriceChart(labels, priceData, smaData, priceAvgLineData, priceBuyLineData, priceSellLineData, avgDisparity, period) {
+            const ctx = document.getElementById('priceChart').getContext('2d');
+            if (priceChartInstance) priceChartInstance.destroy();
+            priceChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: labels,
                     datasets: [
-                        {
-                            label: 'TQQQ 일봉 수정종가 (로그스케일)',
-                            data: priceData,
-                            borderColor: '#3498db',
-                            backgroundColor: 'rgba(52, 152, 219, 0.1)',
-                            borderWidth: 1.5,
-                            pointRadius: 0,
-                            yAxisID: 'y',
-                            tension: 0.1
-                        },
-                        {
-                            label: '1500일 이격 비율 (배수)',
-                            data: disparityData,
-                            borderColor: '#e74c3c', 
-                            backgroundColor: 'rgba(231, 76, 60, 0.1)',
-                            borderWidth: 2, 
-                            pointRadius: 0,
-                            yAxisID: 'y1',
-                            tension: 0.1,
-                            spanGaps: true
-                        }
+                        { label: `${cachedCompanyName} 수정종가`, data: priceData, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, order: 1 },
+                        { label: `평균 이격 위치 (${avgDisparity.toFixed(2)}x)`, data: priceAvgLineData, borderColor: '#000000', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 2 },
+                        { label: `${period}일 이동평균선`, data: smaData, borderColor: '#f1c40f', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 3 },
+                        { label: `매도 타점 가격`, data: priceSellLineData, borderColor: '#e74c3c', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 4 },
+                        { label: `매수 타점 가격`, data: priceBuyLineData, borderColor: '#27ae60', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 5 }
+                    ]
+                },
+                options: { 
+                    responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, 
+                    plugins: { zoom: zoomPluginX },
+                    scales: { 
+                        x: { grid: getYearlyGridConfig(), ticks: getYearlyTicksConfig() }, 
+                        y: { type: 'logarithmic', display: true, position: 'left', title: { display: true, text: '가격(로그)', color: '#333' } } 
+                    } 
+                }
+            });
+        }
+
+        function renderDisparityChart(labels, disparityData, baseLineData, avgLineData, buyLineData, sellLineData, avgDisparity, maxDisp, minDisp, period) {
+            const ctx = document.getElementById('disparityChart').getContext('2d');
+            if (disparityChartInstance) disparityChartInstance.destroy();
+            disparityChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [ 
+                        { label: `${period}일 이격 비율`, data: disparityData, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, fill: true, order: 1 },
+                        { label: `평균 이격도 (${avgDisparity.toFixed(2)}x)`, data: avgLineData, borderColor: '#000000', borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true, order: 2 },
+                        { label: `이평선 (1.0x)`, data: baseLineData, borderColor: '#f1c40f', borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true, order: 3 },
+                        { label: `매도선`, data: sellLineData, borderColor: '#e74c3c', borderWidth: 2, borderDash: [5,5], pointRadius: 0, tension: 0, spanGaps: true, order: 4 },
+                        { label: `매수선`, data: buyLineData, borderColor: '#27ae60', borderWidth: 2, borderDash: [5,5], pointRadius: 0, tension: 0, spanGaps: true, order: 5 }
+                    ]
+                },
+                options: { 
+                    responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, 
+                    plugins: { zoom: zoomPluginX },
+                    scales: { 
+                        x: { grid: getYearlyGridConfig(), ticks: getYearlyTicksConfig() }, 
+                        y: { type: 'linear', display: true, position: 'right', title: { display: true, text: '이격 비율', color: '#3498db' }, min: minDisp, max: maxDisp } 
+                    } 
+                }
+            });
+        }
+
+        function populateTable(dates, prices, displayMulrimData, smaData, disparityData, tradeActions, capitalHistory, period) {
+            const tableBody = document.getElementById('table-body');
+            let htmlContent = '';
+            for (let i = dates.length - 1; i >= 0; i--) {
+                const date = dates[i];
+                const price = prices[i] ? prices[i].toFixed(4) : '-';
+                const sma = smaData[i] !== null ? smaData[i].toFixed(4) : '-';
+                const disparity = disparityData[i] !== null ? disparityData[i].toFixed(4) : '-';
+                const mulrim = displayMulrimData[i]; 
+                const action = tradeActions[i];
+                let actionStyle = '';
+                if(action.includes("매수")) actionStyle = 'color:#27ae60; font-weight:bold;';
+                else if(action.includes("매도")) actionStyle = 'color:#e74c3c; font-weight:bold;';
+                const capital = capitalHistory[i] !== null ? capitalHistory[i].toFixed(2) : '-';
+                htmlContent += `<tr><td>${date}</td><td>${price}</td><td>${sma}</td><td>${disparity}</td><td>${mulrim}</td><td style="${actionStyle}">${action}</td><td>${capital}</td></tr>`;
+            }
+            tableBody.innerHTML = htmlContent;
+        }
+
+        function downloadCSV() {
+            const table = document.getElementById('data-table');
+            let csvContent = "\uFEFF"; 
+            for (let i = 0; i < table.rows.length; i++) {
+                let row = table.rows[i];
+                let rowData = [];
+                for (let j = 0; j < row.cells.length; j++) {
+                    let cellText = row.cells[j].innerText;
+                    cellText = '"' + cellText.replace(/"/g, '""') + '"';
+                    rowData.push(cellText);
+                }
+                csvContent += rowData.join(",") + "\n";
+            }
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", `${cachedCompanyName}_시뮬레이션_결과.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        function openTimeseriesModal() {
+            if (!window.currentAnalysis) return alert('먼저 데이터를 계산해주세요.');
+            openModal('timeseries-modal');
+            const ctx = document.getElementById('timeseriesChart').getContext('2d');
+            if (timeseriesChartInstance) timeseriesChartInstance.destroy();
+            timeseriesChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: window.currentAnalysis.dates,
+                    datasets: [
+                        { label: '이격 비율 (좌측)', data: window.currentAnalysis.disparity, borderColor: '#3498db', yAxisID: 'y', pointRadius: 0, tension: 0.1, spanGaps: true },
+                        { label: '물림일수 (우측)', data: window.currentAnalysis.mulrim, borderColor: '#e74c3c', yAxisID: 'y1', pointRadius: 0, tension: 0.1, spanGaps: true }
                     ]
                 },
                 options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: {
-                        mode: 'index',
-                        intersect: false,
-                    },
-                    plugins: {
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    let label = context.dataset.label || '';
-                                    if (label) label += ': ';
-                                    if (context.parsed.y !== null) {
-                                        if (context.datasetIndex === 1) {
-                                            label += context.parsed.y.toFixed(2) + 'x';
-                                        } else {
-                                            label += context.parsed.y.toFixed(2);
-                                        }
-                                    }
-                                    return label;
-                                }
-                            }
-                        }
-                    },
+                    responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+                    plugins: { zoom: zoomPluginX },
                     scales: {
-                        x: {
-                            grid: { display: false },
-                            ticks: { maxTicksLimit: 12 }
-                        },
-                        y: {
-                            type: 'logarithmic',
-                            display: true,
-                            position: 'left',
-                            title: { display: true, text: '수정종가 (USD)', color: '#3498db' }
-                        },
-                        y1: {
-                            type: 'linear',
-                            display: true,
-                            position: 'right',
-                            title: { display: true, text: '이격 비율 (현재가 / 1500일 평균)', color: '#e74c3c' },
-                            grid: { drawOnChartArea: false },
-                            min: 0, 
-                            max: maxDisp 
-                        }
+                        x: { grid: getYearlyGridConfig(), ticks: getYearlyTicksConfig() },
+                        y: { type: 'linear', position: 'left', title: { display: true, text: '이격비율', color: '#3498db' }, min: window.currentAnalysis.minDisp, max: window.currentAnalysis.maxDisp },
+                        y1: { type: 'linear', position: 'right', title: { display: true, text: '물림일수', color: '#e74c3c' }, grid: { drawOnChartArea: false } }
                     }
                 }
             });
         }
 
-        function populateTable(dates, prices, disparityData) {
-            const tableBody = document.getElementById('table-body');
-            let htmlContent = '';
+        function openScatterModal() {
+            if (!window.currentAnalysis) return alert('먼저 데이터를 계산해주세요.');
+            openModal('scatter-modal');
+            const ctx = document.getElementById('scatterChart').getContext('2d');
+            if (scatterChartInstance) scatterChartInstance.destroy();
 
-            for (let i = dates.length - 1; i >= 0; i--) {
-                const date = dates[i];
-                const price = prices[i] ? prices[i].toFixed(4) : 'N/A';
-                const disparity = disparityData[i] !== null ? disparityData[i].toFixed(4) : '<span style="color:#999;">데이터 부족(1500일 미만)</span>';
-
-                htmlContent += `
-                    <tr>
-                        <td>${date}</td>
-                        <td>${price}</td>
-                        <td>${disparity}</td>
-                    </tr>
-                `;
+            let scatterData = [], scatterColors = [], validIndices = [];
+            for(let i=0; i<window.currentAnalysis.dates.length; i++) {
+                if(window.currentAnalysis.disparity[i] !== null && window.currentAnalysis.mulrim[i] !== null) validIndices.push(i);
             }
-            tableBody.innerHTML = htmlContent;
+            const N_valid = validIndices.length;
+            for(let k = 0; k < N_valid; k++) {
+                let i = validIndices[k];
+                scatterData.push({ x: window.currentAnalysis.disparity[i], y: window.currentAnalysis.mulrim[i] });
+                let t = N_valid > 1 ? k / (N_valid - 1) : 0; 
+                let v = t * 4; 
+                let r, g, b;
+                if (v <= 1) { r = 255; g = Math.round(v * 255); b = 0; } 
+                else if (v <= 2) { r = Math.round(255 - (v - 1) * 255); g = 255; b = 0; } 
+                else if (v <= 3) { r = 0; g = 255; b = Math.round((v - 2) * 255); } 
+                else { r = 0; g = Math.round(255 - (v - 3) * 255); b = 255; }
+                scatterColors.push(`rgba(${r}, ${g}, ${b}, 0.6)`);
+            }
+
+            let trendlineData = [
+                { x: window.currentAnalysis.minDisp, y: window.currentAnalysis.slope * window.currentAnalysis.minDisp + window.currentAnalysis.intercept },
+                { x: window.currentAnalysis.maxDisp, y: window.currentAnalysis.slope * window.currentAnalysis.maxDisp + window.currentAnalysis.intercept }
+            ];
+
+            scatterChartInstance = new Chart(ctx, {
+                data: {
+                    datasets: [
+                        { type: 'scatter', label: '과거 데이터 (적색:과거 → 청색:최신)', data: scatterData, backgroundColor: scatterColors, pointRadius: 4, pointHoverRadius: 6 },
+                        { type: 'line', label: '추세선', data: trendlineData, borderColor: '#e74c3c', borderWidth: 2, pointRadius: 0, fill: false }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    interaction: { mode: 'nearest', intersect: true },
+                    plugins: { 
+                        zoom: zoomPluginXY,
+                        tooltip: { callbacks: { label: function(c) { return `이격도: ${c.parsed.x.toFixed(2)}x, 물림: ${c.parsed.y}일`; } } } 
+                    },
+                    scales: { x: { type: 'linear', position: 'bottom', title: { display: true, text: '이격비율' } }, y: { title: { display: true, text: '물림일수' }, beginAtZero: true } }
+                }
+            });
         }
 
-        function toggleTable() {
-            const container = document.getElementById('table-container');
-            if (container.style.display === 'none' || container.style.display === '') {
-                container.style.display = 'block';
-            } else {
-                container.style.display = 'none';
+        function getFastR2ForPeriod(period) {
+            const N = cachedData.prices.length;
+            let validX = [], validY = [], sum = 0;
+            for (let i = 0; i < N; i++) {
+                sum += cachedData.prices[i];
+                if (i >= period) sum -= cachedData.prices[i - period];
+                if (i >= period - 1) {
+                    let avg = sum / period;
+                    if (avg > 0) {
+                        let disparity = cachedData.prices[i] / avg;
+                        if ((N - 1) - i >= cachedData.maxMulrim && Number.isFinite(disparity)) {
+                            validX.push(disparity); validY.push(cachedData.rawMulrimData[i]);
+                        }
+                    }
+                }
+            }
+            if (validX.length < 30) return 0; 
+            let sumX = 0, sumY = 0;
+            for (let i = 0; i < validX.length; i++) { sumX += validX[i]; sumY += validY[i]; }
+            let meanX = sumX / validX.length, meanY = sumY / validY.length;
+            let covXY = 0, varX = 0, varY = 0;
+            for (let i = 0; i < validX.length; i++) {
+                let dx = validX[i] - meanX, dy = validY[i] - meanY;
+                covXY += dx * dy; varX += dx * dx; varY += dy * dy;
+            }
+            if (varX > 0 && varY > 0) return (covXY / Math.sqrt(varX * varY)) ** 2;
+            return 0;
+        }
+
+        function openOptimizer() {
+            if (!cachedData) return alert('먼저 데이터를 불러와주세요.');
+            openModal('optimizer-modal');
+            document.getElementById('opt-apply-btn').style.display = 'none';
+            document.getElementById('opt-result-text').innerText = '연산 중입니다...';
+            if (optChartInstance) optChartInstance.destroy();
+            setTimeout(() => { runOptimization(); }, 50);
+        }
+
+        function runOptimization() {
+            const maxTestPeriod = Math.min(3000, cachedData.prices.length - cachedData.maxMulrim - 30);
+            if (maxTestPeriod < 1) { closeModal('optimizer-modal'); return alert("데이터가 부족합니다."); }
+            let labels = [], r2Data = [], maxR2 = -1, bestPeriod = 1; 
+            for (let p = 1; p <= maxTestPeriod; p += 1) {
+                let r2 = getFastR2ForPeriod(p);
+                labels.push(p); r2Data.push(r2);
+                if (r2 > maxR2) { maxR2 = r2; bestPeriod = p; }
+            }
+            bestOptimizedPeriod = bestPeriod;
+            
+            const ctx = document.getElementById('optimizerChart').getContext('2d');
+            let pointColors = labels.map(l => l === bestPeriod ? '#e74c3c' : '#3498db');
+            let pointRadius = labels.map(l => l === bestPeriod ? 6 : 0);
+            optChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: { labels: labels, datasets: [{ label: 'R²', data: r2Data, borderColor: '#3498db', backgroundColor: 'rgba(52,152,219,0.1)', borderWidth: 2, pointBackgroundColor: pointColors, pointBorderColor: pointColors, pointRadius: pointRadius, fill: true }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { zoom: zoomPluginX } }
+            });
+            document.getElementById('opt-result-text').innerHTML = `최적 기준일수: <span style="color:#e74c3c; font-size:20px;">${bestPeriod}일</span> (R² = ${maxR2.toFixed(4)})`;
+            document.getElementById('opt-apply-btn').style.display = 'inline-block';
+        }
+
+        function applyOptimization() {
+            document.getElementById('ma-period').value = bestOptimizedPeriod;
+            closeModal('optimizer-modal');
+            calculateAndRender();
+        }
+
+        function openTradeOptimizer() {
+            if (!cachedData) return alert('먼저 데이터를 불러와주세요.');
+            openModal('trade-optimizer-modal');
+            window.selectedPointFromChart = null;
+            document.getElementById('custom-apply-btn').disabled = true;
+            document.getElementById('trade-opt-apply-btn').style.display = 'none';
+            document.getElementById('trade-opt-result-text').innerText = '수만 가지 조합의 딥 시뮬레이션을 진행 중입니다...';
+            setTimeout(() => { runTradeOptimization(); }, 100);
+        }
+
+        function runTradeOptimization() {
+            const period = parseInt(document.getElementById('ma-period').value) || 1500;
+            const initCap = parseFloat(document.getElementById('initial-cap').value) || 10000;
+            const N = cachedData.prices.length;
+            let disparities = new Array(N).fill(null);
+            let sum = 0, validCount = 0;
+            let minD = 9999, maxD = -9999;
+
+            for (let i = 0; i < N; i++) {
+                let p = cachedData.prices[i];
+                sum += p;
+                if (i >= period) sum -= cachedData.prices[i - period];
+                if (i >= period - 1) {
+                    let avg = sum / period;
+                    if (avg > 0) {
+                        let d = p / avg;
+                        disparities[i] = d;
+                        if (Number.isFinite(d)) {
+                            validCount++;
+                            if (d < minD) minD = d;
+                            if (d > maxD) maxD = d;
+                        }
+                    }
+                }
+            }
+
+            if (validCount < 10) {
+                closeModal('trade-optimizer-modal');
+                return alert("데이터가 너무 적어 최적화할 수 없습니다.");
+            }
+
+            let step = 0.05; 
+            let startD = Math.floor(minD * 100) / 100;
+            let endD = Math.ceil(maxD * 100) / 100;
+
+            let xLabels = []; 
+            let yLabels = []; 
+            
+            for (let b = startD; b <= endD - step; b += step) xLabels.push(parseFloat(b.toFixed(2)));
+            for (let s = startD + step; s <= endD; s += step) yLabels.push(parseFloat(s.toFixed(2)));
+
+            let results = [];
+            let maxFinalCapital = -1;
+            let minFinalCapital = Infinity;
+            let bestBuy = 0, bestSell = 0;
+
+            for (let i = 0; i < yLabels.length; i++) {
+                let sellPt = yLabels[i];
+                for (let j = 0; j < xLabels.length; j++) {
+                    let buyPt = xLabels[j];
+                    if (buyPt >= sellPt) continue;
+
+                    let firstValidIdx = disparities.findIndex(d => d !== null);
+                    if (firstValidIdx === -1) firstValidIdx = 0;
+
+                    let cash = 0;
+                    let shares = initCap / cachedData.prices[firstValidIdx];
+                    let isHolding = true;
+                    
+                    for (let k = firstValidIdx; k < N; k++) {
+                        let d = disparities[k];
+                        if (d === null) continue;
+                        
+                        let p = cachedData.prices[k];
+                        if (isHolding && d > sellPt && shares > 0) {
+                            cash = shares * p;
+                            shares = 0;
+                            isHolding = false;
+                        } else if (!isHolding && d < buyPt && cash > 0) {
+                            shares = cash / p;
+                            cash = 0;
+                            isHolding = true;
+                        }
+                    }
+                    
+                    let finalCap = cash + (shares * cachedData.prices[N - 1]);
+                    results.push({ buy: buyPt, sell: sellPt, v: finalCap });
+
+                    if (finalCap > maxFinalCapital) {
+                        maxFinalCapital = finalCap;
+                        bestBuy = buyPt;
+                        bestSell = sellPt;
+                    }
+                    if (finalCap < minFinalCapital) {
+                        minFinalCapital = finalCap;
+                    }
+                }
+            }
+
+            bestOptimizedBuy = bestBuy;
+            bestOptimizedSell = bestSell;
+
+            let scatterData = [];
+            let scatterColors = [];
+            
+            for (let item of results) {
+                scatterData.push({ x: item.sell, y: item.buy });
+                let t = (maxFinalCapital === minFinalCapital) ? 0 : (maxFinalCapital - item.v) / (maxFinalCapital - minFinalCapital);
+                let v = t * 4; 
+                let r, g, b;
+                if (v <= 1) { r = 255; g = Math.round(v * 255); b = 0; } 
+                else if (v <= 2) { r = Math.round(255 - (v - 1) * 255); g = 255; b = 0; } 
+                else if (v <= 3) { r = 0; g = 255; b = Math.round((v - 2) * 255); } 
+                else { r = 0; g = Math.round(255 - (v - 3) * 255); b = 255; }
+                
+                scatterColors.push(`rgba(${r}, ${g}, ${b}, 0.8)`);
+            }
+
+            const ctx = document.getElementById('tradeOptimizerChart').getContext('2d');
+            if (tradeOptChartInstance) tradeOptChartInstance.destroy();
+            
+            tradeOptChartInstance = new Chart(ctx, {
+                type: 'scatter',
+                data: {
+                    datasets: [{
+                        label: '최종 자본금 (적색:최고수익 → 청색:최저수익)',
+                        data: scatterData,
+                        backgroundColor: scatterColors,
+                        pointStyle: 'rect',
+                        pointRadius: 6,
+                        pointHoverRadius: 8
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    interaction: { mode: 'nearest', intersect: true, axis: 'xy' },
+                    onClick: function(e, elements) {
+                        if (elements.length > 0) {
+                            const idx = elements[0].index;
+                            const item = results[idx];
+                            window.selectedPointFromChart = { buy: item.buy, sell: item.sell };
+                            document.getElementById('custom-apply-btn').disabled = false;
+                            
+                            document.getElementById('trade-opt-result-text').innerHTML = 
+                                `최고 효율 매수: <span style="color:#27ae60;">${bestBuy}x</span> 이하 / 매도: <span style="color:#e74c3c;">${bestSell}x</span> 이상<br>`+
+                                `이때의 예상 최고 자본: <span style="color:#d35400;">${maxFinalCapital.toLocaleString(undefined, {maximumFractionDigits:2})}</span><br><br>`+
+                                `<span style="color:#2980b9; font-size:15px; font-weight:bold;">[선택된 타점] 매수: ${item.buy}x / 매도: ${item.sell}x (최종자본: ${item.v.toLocaleString(undefined, {maximumFractionDigits:2})})</span>`;
+                        }
+                    },
+                    plugins: {
+                        zoom: zoomPluginXY,
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let idx = context.dataIndex;
+                                    let cap = results[idx].v;
+                                    return `매도: ${context.parsed.x.toFixed(2)}x, 매수: ${context.parsed.y.toFixed(2)}x | 자산: ${cap.toLocaleString(undefined, {maximumFractionDigits:0})}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { title: { display: true, text: '매도 기준선 (Sell)' } },
+                        y: { title: { display: true, text: '매수 기준선 (Buy)' } }
+                    }
+                }
+            });
+
+            document.getElementById('trade-opt-result-text').innerHTML = 
+                `최고 효율 매수: <span style="color:#27ae60;">${bestBuy}x</span> 이하 / 매도: <span style="color:#e74c3c;">${bestSell}x</span> 이상<br>`+
+                `이때의 예상 최종 자산: <span style="color:#e74c3c;">${maxFinalCapital.toLocaleString(undefined, {maximumFractionDigits:2})}</span>`;
+            document.getElementById('trade-opt-apply-btn').style.display = 'inline-block';
+        }
+
+        function applyTradeOptimization() {
+            document.getElementById('buy-point').value = bestOptimizedBuy;
+            document.getElementById('sell-point').value = bestOptimizedSell;
+            closeModal('trade-optimizer-modal');
+            calculateAndRender();
+        }
+
+        function applySelectedPoint() {
+            if (window.selectedPointFromChart) {
+                document.getElementById('buy-point').value = window.selectedPointFromChart.buy;
+                document.getElementById('sell-point').value = window.selectedPointFromChart.sell;
+                closeModal('trade-optimizer-modal');
+                calculateAndRender();
             }
         }
 
-        fetchAndRenderChart();
+        window.onload = handleRenderClick;
     </script>
 </body>
 </html>
