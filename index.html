@@ -15,6 +15,7 @@
     <meta name="apple-mobile-web-app-title" content="Stock Analytics">
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script> <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 
     <style>
         body {
@@ -113,6 +114,8 @@
         .btn-trade-opt:hover { background-color: #a04000; }
         .btn-info { background-color: #2980b9; }
         .btn-info:hover { background-color: #2471a3; }
+        .btn-reset { background-color: #7f8c8d; }
+        .btn-reset:hover { background-color: #636e72; }
         .btn-download { background-color: #27ae60; margin-top: 10px; }
         .btn-download:hover { background-color: #219653; }
         
@@ -230,6 +233,7 @@
             <p id="opt-result-text" style="font-size:16px; font-weight:bold; margin:15px 0;">연산 중입니다...</p>
             <div class="modal-actions">
                 <button id="opt-apply-btn" class="btn btn-download" style="display:none; margin:0;" onclick="applyOptimization()">적용하기</button>
+                <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(optChartInstance)">🔍 줌 초기화</button>
                 <button class="btn" style="margin:0;" onclick="closeModal('optimizer-modal')">닫기</button>
             </div>
         </div>
@@ -244,6 +248,7 @@
             <p id="trade-opt-result-text" style="font-size:16px; font-weight:bold; margin:15px 0;">모든 매수/매도 조합을 시뮬레이션 중입니다...</p>
             <div class="modal-actions">
                 <button id="trade-opt-apply-btn" class="btn btn-trade-opt" style="display:none; margin:0;" onclick="applyTradeOptimization()">최적 타점 적용하기</button>
+                <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(tradeOptChartInstance)">🔍 줌 초기화</button>
                 <button class="btn" style="margin:0;" onclick="closeModal('trade-optimizer-modal')">닫기</button>
             </div>
         </div>
@@ -256,6 +261,7 @@
                 <canvas id="timeseriesChart"></canvas>
             </div>
             <div class="modal-actions">
+                <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(timeseriesChartInstance)">🔍 줌 초기화</button>
                 <button class="btn" style="margin:0;" onclick="closeModal('timeseries-modal')">닫기</button>
             </div>
         </div>
@@ -268,6 +274,7 @@
                 <canvas id="scatterChart"></canvas>
             </div>
             <div class="modal-actions">
+                <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(scatterChartInstance)">🔍 줌 초기화</button>
                 <button class="btn" style="margin:0;" onclick="closeModal('scatter-modal')">닫기</button>
             </div>
         </div>
@@ -306,6 +313,7 @@
             <div class="btn-group" style="margin-top: 5px;">
                 <button class="btn btn-info" onclick="openTimeseriesModal()">📅 이격도 vs 물림일수</button>
                 <button class="btn btn-info" onclick="openScatterModal()">📈 이격-물림 산점도</button>
+                <button class="btn btn-reset" onclick="resetMainChartsZoom()">🔍 메인차트 줌 초기화</button>
             </div>
         </div>
 
@@ -355,6 +363,8 @@
         let cachedCompanyName = 'TQQQ';
         let cachedData = null;
         
+        let priceChartInstance = null;
+        let disparityChartInstance = null;
         let optChartInstance = null;
         let tradeOptChartInstance = null;
         let timeseriesChartInstance = null;
@@ -365,6 +375,17 @@
         let bestOptimizedSell = 1.2;
 
         window.currentAnalysis = null;
+
+        // --- 공통 Zoom 리셋 함수 ---
+        function resetChartZoom(chartInstance) {
+            if (chartInstance) {
+                chartInstance.resetZoom();
+            }
+        }
+        function resetMainChartsZoom() {
+            resetChartZoom(priceChartInstance);
+            resetChartZoom(disparityChartInstance);
+        }
 
         async function handleRenderClick() {
             let rawTicker = document.getElementById('ticker-input').value.trim().toUpperCase();
@@ -517,7 +538,7 @@
                 }
             }
 
-            // 3. 백테스트
+            // 3. 백테스트 (초기 자본을 모두 주식으로 보유한 상태에서 시작)
             let isHolding = true;
             let cash = 0;
             let shares = initialCap / cachedData.prices[0]; 
@@ -548,7 +569,7 @@
             }
             let finalCapital = capitalHistory[N - 1];
 
-            // 4. 물림일수
+            // 4. 물림일수 필터링
             let displayMulrimData = new Array(N);
             let safeMulrimData = new Array(N); 
             for (let i = 0; i < N; i++) {
@@ -632,7 +653,7 @@
             populateTable(cachedData.dates, cachedData.prices, displayMulrimData, smaData, disparityData, tradeActions, capitalHistory, period);
         }
 
-        // --- 차트 렌더링 로직 (Chart.js) ---
+        // --- 차트 렌더링 로직 (Chart.js + Zoom) ---
         function getYearlyTicksConfig() {
             return {
                 autoSkip: false, maxRotation: 0,
@@ -652,10 +673,25 @@
             };
         }
 
+        // 공통 Zoom 설정 (X축 기준 이동 및 확대)
+        const commonZoomOptionsX = {
+            zoom: {
+                pan: { enabled: true, mode: 'x' },
+                zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
+            }
+        };
+        // 공통 Zoom 설정 (XY축 기준 이동 및 확대 - 산점도용)
+        const commonZoomOptionsXY = {
+            zoom: {
+                pan: { enabled: true, mode: 'xy' },
+                zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }
+            }
+        };
+
         function renderPriceChart(labels, priceData, smaData, priceAvgLineData, priceBuyLineData, priceSellLineData, avgDisparity, period) {
             const ctx = document.getElementById('priceChart').getContext('2d');
-            if (window.priceChartInstance) window.priceChartInstance.destroy();
-            window.priceChartInstance = new Chart(ctx, {
+            if (priceChartInstance) priceChartInstance.destroy();
+            priceChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: labels,
@@ -669,6 +705,7 @@
                 },
                 options: { 
                     responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, 
+                    plugins: commonZoomOptionsX,
                     scales: { 
                         x: { grid: getYearlyGridConfig(), ticks: getYearlyTicksConfig() }, 
                         y: { type: 'logarithmic', display: true, position: 'left', title: { display: true, text: '가격(로그)', color: '#333' } } 
@@ -679,8 +716,8 @@
 
         function renderDisparityChart(labels, disparityData, baseLineData, avgLineData, buyLineData, sellLineData, avgDisparity, maxDisp, minDisp, period) {
             const ctx = document.getElementById('disparityChart').getContext('2d');
-            if (window.disparityChartInstance) window.disparityChartInstance.destroy();
-            window.disparityChartInstance = new Chart(ctx, {
+            if (disparityChartInstance) disparityChartInstance.destroy();
+            disparityChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: labels,
@@ -694,6 +731,7 @@
                 },
                 options: { 
                     responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, 
+                    plugins: commonZoomOptionsX,
                     scales: { 
                         x: { grid: getYearlyGridConfig(), ticks: getYearlyTicksConfig() }, 
                         y: { type: 'linear', display: true, position: 'right', title: { display: true, text: '이격 비율', color: '#3498db' }, min: minDisp, max: maxDisp } 
@@ -769,6 +807,7 @@
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+                    plugins: commonZoomOptionsX,
                     scales: {
                         x: { grid: getYearlyGridConfig(), ticks: getYearlyTicksConfig() },
                         y: { type: 'linear', position: 'left', title: { display: true, text: '이격비율', color: '#3498db' }, min: window.currentAnalysis.minDisp, max: window.currentAnalysis.maxDisp },
@@ -817,12 +856,11 @@
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false,
-                    // [중요] 단일 점만 선택되도록 Interaction 수정
-                    interaction: {
-                        mode: 'nearest',
-                        intersect: true
+                    interaction: { mode: 'nearest', intersect: true },
+                    plugins: { 
+                        ...commonZoomOptionsXY.zoom,
+                        tooltip: { callbacks: { label: function(c) { return `이격도: ${c.parsed.x.toFixed(2)}x, 물림: ${c.parsed.y}일`; } } } 
                     },
-                    plugins: { tooltip: { callbacks: { label: function(c) { return `이격도: ${c.parsed.x.toFixed(2)}x, 물림: ${c.parsed.y}일`; } } } },
                     scales: { x: { type: 'linear', position: 'bottom', title: { display: true, text: '이격비율' } }, y: { title: { display: true, text: '물림일수' }, beginAtZero: true } }
                 }
             });
@@ -885,7 +923,7 @@
             optChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: { labels: labels, datasets: [{ label: 'R²', data: r2Data, borderColor: '#3498db', backgroundColor: 'rgba(52,152,219,0.1)', borderWidth: 2, pointBackgroundColor: pointColors, pointBorderColor: pointColors, pointRadius: pointRadius, fill: true }] },
-                options: { responsive: true, maintainAspectRatio: false }
+                options: { responsive: true, maintainAspectRatio: false, plugins: commonZoomOptionsX }
             });
             document.getElementById('opt-result-text').innerHTML = `최적 기준일수: <span style="color:#e74c3c; font-size:20px;">${bestPeriod}일</span> (R² = ${maxR2.toFixed(4)})`;
             document.getElementById('opt-apply-btn').style.display = 'inline-block';
@@ -1019,7 +1057,7 @@
                 type: 'scatter',
                 data: {
                     datasets: [{
-                        label: '최종 자본금',
+                        label: '최종 자본금 (적색:최고수익 → 청색:최저수익)',
                         data: scatterData,
                         backgroundColor: scatterColors,
                         pointStyle: 'rect',
@@ -1029,13 +1067,9 @@
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false,
-                    // [중요] 단일 점만 선택되도록 Interaction 수정
-                    interaction: {
-                        mode: 'nearest',
-                        intersect: true,
-                        axis: 'xy'
-                    },
+                    interaction: { mode: 'nearest', intersect: true },
                     plugins: {
+                        ...commonZoomOptionsXY.zoom,
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
