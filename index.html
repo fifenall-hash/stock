@@ -14,9 +14,9 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Stock Analytics">
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/dist/chartjs-plugin-zoom.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
 
     <style>
         body {
@@ -30,11 +30,12 @@
             overflow-x: hidden;
         }
         
+        /* 터치 및 스크롤 충돌 방지 */
         canvas {
             touch-action: pan-y !important; /* 위아래 스크롤 허용, 좌우는 차트 이동 */
         }
         #scatterChart, #tradeOptimizerChart {
-            touch-action: none !important; 
+            touch-action: none !important; /* 모달창 내 산점도는 전체 터치 제어 허용 */
         }
 
         .widget-container {
@@ -261,7 +262,7 @@
             </div>
             <p id="trade-opt-result-text" style="font-size:16px; font-weight:bold; margin:15px 0;">모든 매수/매도 조합을 시뮬레이션 중입니다...</p>
             <div class="modal-actions">
-                <button id="trade-opt-apply-btn" class="btn btn-trade-opt" style="display:none; margin:0;" onclick="applyTradeOptimization()">최적 타점 적용하기</button>
+                <button id="trade-opt-apply-btn" class="btn btn-trade-opt" style="display:none; margin:0;" onclick="applyTradeOptimization()">최고 효율 타점 적용하기</button>
                 <button id="custom-apply-btn" class="btn btn-apply-selected" style="margin:0;" disabled onclick="applySelectedPoint()">해당 타점 적용하기</button>
                 <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(tradeOptChartInstance)">🔍 줌 초기화</button>
                 <button class="btn" style="margin:0;" onclick="closeModal('trade-optimizer-modal')">닫기</button>
@@ -392,6 +393,7 @@
         window.currentAnalysis = null;
         window.selectedPointFromChart = null; 
 
+        // --- 공통 모달 및 Zoom 제어 로직 ---
         function openModal(modalId) {
             document.getElementById(modalId).style.display = 'flex';
             document.body.style.overflow = 'hidden';
@@ -413,6 +415,7 @@
             resetChartZoom(disparityChartInstance);
         }
 
+        // 플러그인 Zoom 옵션 설정 (안정화 됨)
         const zoomPluginX = {
             pan: { enabled: true, mode: 'x' },
             zoom: { 
@@ -459,8 +462,8 @@
             loadingEl.innerHTML = `${ticker} 데이터를 불러오는 중입니다...<br><span style="font-size:14px; color:#7f8c8d;">(야후 서버 응답 대기 중)</span>`;
             loadingEl.style.color = '#3498db';
 
-            const currentUnixTime = Math.floor(Date.now() / 1000); 
-            const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?period1=0&period2=${currentUnixTime}&interval=1d`;
+            // [핵심 수정] 15일 간격 점프 방지 (range=max, interval=1d 사용)
+            const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=max&interval=1d`;
 
             const proxyList = [
                 `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
@@ -582,20 +585,19 @@
                 }
             }
 
-            // [핵심 수정] 3. 백테스트 (이격도 계산이 처음 가능해진 시점부터 전액 주식 보유로 시뮬레이션 구동)
+            // 3. 백테스트
             let firstValidIdx = disparityData.findIndex(d => d !== null);
-            if (firstValidIdx === -1) firstValidIdx = 0; // 예외방지용 fallback
+            if (firstValidIdx === -1) firstValidIdx = 0; 
 
             let isHolding = true;
             let cash = 0;
-            let shares = initialCap / cachedData.prices[firstValidIdx]; // 이격도가 시작되는 바로 그 날짜의 종가로 전액 매수 진행
+            let shares = initialCap / cachedData.prices[firstValidIdx]; 
             
             let tradeActions = new Array(N).fill("-");
             let capitalHistory = new Array(N).fill(null);
 
             tradeActions[firstValidIdx] = "초기 보유 시작";
 
-            // 시뮬레이션 시작 이전 지점은 초기 자본금으로 임시 고정
             for (let i = 0; i < firstValidIdx; i++) {
                 capitalHistory[i] = initialCap;
             }
@@ -621,7 +623,6 @@
             }
             let finalCapital = capitalHistory[N - 1];
 
-            // [핵심 수정] CAGR 및 날짜 연산을 전략 수행이 직접 일어난 이격도 첫 계산일 기준으로 변경
             const startDateStr = cachedData.dates[firstValidIdx];
             const endDateStr = cachedData.dates[N - 1];
             const startDt = new Date(startDateStr);
@@ -634,7 +635,7 @@
             
             const cagr = (Math.pow(finalCapital / initialCap, 1 / totalYears) - 1) * 100;
 
-            // 4. 물림일수
+            // 4. 물림일수 필터링
             let displayMulrimData = new Array(N);
             let safeMulrimData = new Array(N); 
             for (let i = 0; i < N; i++) {
@@ -728,12 +729,18 @@
                     try {
                         const labels = this.chart.data.labels;
                         if (!labels) return null;
+                        
+                        // 줌 플러그인용 안전장치 (가상의 소수점 틱은 무시)
                         if (Math.floor(val) !== val) return null; 
+                        
                         const label = labels[val];
                         if (!label || label.length < 4) return null;
+
                         if (val === 0) return label.substring(0, 4) + '-01';
+                        
                         const prevLabel = labels[val - 1];
                         if (!prevLabel || prevLabel.length < 4) return null;
+                        
                         if (label.substring(0, 4) !== prevLabel.substring(0, 4)) {
                             return label.substring(0, 4) + '-01';
                         }
@@ -1056,14 +1063,12 @@
             let minFinalCapital = Infinity;
             let bestBuy = 0, bestSell = 0;
 
-            // 시뮬레이터 자체는 원래 순서대로 연산 진행
             for (let i = 0; i < yLabels.length; i++) {
                 let sellPt = yLabels[i];
                 for (let j = 0; j < xLabels.length; j++) {
                     let buyPt = xLabels[j];
                     if (buyPt >= sellPt) continue;
 
-                    // 이격도가 계산되는 첫 날 기준 전액 매수로 시작하는 로직 적용
                     let firstValidIdx = disparities.findIndex(d => d !== null);
                     if (firstValidIdx === -1) firstValidIdx = 0;
 
@@ -1108,7 +1113,6 @@
             let scatterColors = [];
             
             for (let item of results) {
-                // [요청 반영 축 반전] X축은 매도 기준선(Sell), Y축은 매수 기준선(Buy)
                 scatterData.push({ x: item.sell, y: item.buy });
                 let t = (maxFinalCapital === minFinalCapital) ? 0 : (maxFinalCapital - item.v) / (maxFinalCapital - minFinalCapital);
                 let v = t * 4; 
@@ -1159,14 +1163,12 @@
                                 label: function(context) {
                                     let idx = context.dataIndex;
                                     let cap = results[idx].v;
-                                    // [축 반전 정렬] 매도(x), 매수(y)
                                     return `매도: ${context.parsed.x.toFixed(2)}x, 매수: ${context.parsed.y.toFixed(2)}x | 자산: ${cap.toLocaleString(undefined, {maximumFractionDigits:0})}`;
                                 }
                             }
                         }
                     },
                     scales: {
-                        // [요청 반영 축 명칭 전환]
                         x: { title: { display: true, text: '매도 기준선 (Sell)' } },
                         y: { title: { display: true, text: '매수 기준선 (Buy)' } }
                     }
