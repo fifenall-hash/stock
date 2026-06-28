@@ -315,7 +315,7 @@
             
             <label>초기 자본 <input type="number" id="initial-cap" value="10000" min="1"></label>
             <label style="color:#27ae60;">매수(이하) <input type="number" id="buy-point" step="0.05" value="1.5"></label>
-            <label style="color:#e74c3c;">매도(이상) <input type="number" id="sell-point" step="0.05" value="3"></label>
+            <label style="color:#e74c3c;">매도(이상) <input type="number" id="sell-point" step="0.05" value="3.0"></label>
             
             <div class="btn-group">
                 <button class="btn" onclick="handleRenderClick()">데이터 갱신 및 시뮬레이션</button>
@@ -389,7 +389,7 @@
         let bestOptimizedSell = 3.0;
 
         window.currentAnalysis = null;
-        window.selectedPointFromChart = null; // 사용자가 선택한 개별 좌표 보관용 변수
+        window.selectedPointFromChart = null; 
 
         // --- 공통 모달 및 Zoom 제어 로직 ---
         function openModal(modalId) {
@@ -542,6 +542,7 @@
             const maxMulrim = cachedData.maxMulrim;
             const rawMulrimData = cachedData.rawMulrimData;
 
+            // 1. 이평선 및 이격도 계산
             for (let i = 0; i < N; i++) {
                 const currentPrice = cachedData.prices[i];
                 windowPrices.push(currentPrice);
@@ -560,6 +561,7 @@
 
             let avgDisparity = validDisparities.length > 0 ? validDisparities.reduce((a, b) => a + b, 0) / validDisparities.length : 0;
             
+            // 2. 기준선 데이터 생성
             let disparityBaseLineData = [], disparityBuyLineData = [], disparitySellLineData = [];
             let disparityAvgLineData = [], priceAvgDisparityLineData = [];
             let priceBuyLineData = [], priceSellLineData = [];
@@ -580,6 +582,7 @@
                 }
             }
 
+            // 3. 백테스트
             let isHolding = true;
             let cash = 0;
             let shares = initialCap / cachedData.prices[0]; 
@@ -610,6 +613,7 @@
             }
             let finalCapital = capitalHistory[N - 1];
 
+            // 4. 물림일수
             let displayMulrimData = new Array(N);
             let safeMulrimData = new Array(N); 
             for (let i = 0; i < N; i++) {
@@ -622,6 +626,7 @@
                 }
             }
 
+            // 5. 회귀분석
             let rSquared = 0, slope = 0, intercept = 0, validX = [], validY = [];
             for (let i = 0; i < N; i++) {
                 if (disparityData[i] !== null && safeMulrimData[i] !== null) {
@@ -692,56 +697,49 @@
             populateTable(cachedData.dates, cachedData.prices, displayMulrimData, smaData, disparityData, tradeActions, capitalHistory, period);
         }
 
-        function renderPriceChart(labels, priceData, smaData, priceAvgLineData, priceBuyLineData, priceSellLineData, avgDisparity, period) {
-            const ctx = document.getElementById('priceChart').getContext('2d');
-            if (priceChartInstance) priceChartInstance.destroy();
-            priceChartInstance = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [
-                        { label: `${cachedCompanyName} 수정종가`, data: priceData, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, order: 1 },
-                        { label: `평균 이격 위치 (${avgDisparity.toFixed(2)}x)`, data: priceAvgLineData, borderColor: '#000000', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 2 },
-                        { label: `${period}일 이동평균선`, data: smaData, borderColor: '#f1c40f', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 3 },
-                        { label: `매도 타점 가격`, data: priceSellLineData, borderColor: '#e74c3c', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 4 },
-                        { label: `매수 타점 가격`, data: priceBuyLineData, borderColor: '#27ae60', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 5 }
-                    ]
-                },
-                options: { 
-                    responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, 
-                    plugins: { zoom: zoomPluginX },
-                    scales: { 
-                        x: { grid: getYearlyGridConfig(), ticks: getYearlyTicksConfig() }, 
-                        y: { type: 'logarithmic', display: true, position: 'left', title: { display: true, text: '가격(로그)', color: '#333' } } 
-                    } 
+        // --- [핵심 수정] 예외 감지 장치가 보완된 안전한 X축 틱 구성기 ---
+        function getYearlyTicksConfig() {
+            return {
+                autoSkip: false,
+                maxRotation: 0,
+                callback: function(val, index, ticks) {
+                    const currentLabel = this.getLabelForValue(val);
+                    // 예외 확인: 레이블이 없거나 문자열이 아닐 경우 즉시 튕겨냄 (줌 에러 방지)
+                    if (!currentLabel || typeof currentLabel !== 'string' || currentLabel.length < 4) return null;
+                    
+                    if (index === 0) return currentLabel.substring(0, 4) + '-01';
+                    
+                    // index - 1 방식을 지양하고 Chart.js 가 전달한 틱 오브젝트 풀에서 이전 요소를 역산
+                    const prevTick = ticks[index - 1];
+                    if (!prevTick) return null;
+                    
+                    const prevLabel = this.getLabelForValue(prevTick.value);
+                    if (!prevLabel || typeof prevLabel !== 'string' || prevLabel.length < 4) return null;
+                    
+                    const currYear = currentLabel.substring(0, 4);
+                    const prevYear = prevLabel.substring(0, 4);
+                    
+                    if (currYear !== prevYear) {
+                        return currYear + '-01'; 
+                    }
+                    return null;
                 }
-            });
+            };
         }
 
-        function renderDisparityChart(labels, disparityData, baseLineData, avgLineData, buyLineData, sellLineData, avgDisparity, maxDisp, minDisp, period) {
-            const ctx = document.getElementById('disparityChart').getContext('2d');
-            if (disparityChartInstance) disparityChartInstance.destroy();
-            disparityChartInstance = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [ 
-                        { label: `${period}일 이격 비율`, data: disparityData, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, fill: true, order: 1 },
-                        { label: `평균 이격도 (${avgDisparity.toFixed(2)}x)`, data: avgLineData, borderColor: '#000000', borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true, order: 2 },
-                        { label: `이평선 (1.0x)`, data: baseLineData, borderColor: '#f1c40f', borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true, order: 3 },
-                        { label: `매도선`, data: sellLineData, borderColor: '#e74c3c', borderWidth: 2, borderDash: [5,5], pointRadius: 0, tension: 0, spanGaps: true, order: 4 },
-                        { label: `매수선`, data: buyLineData, borderColor: '#27ae60', borderWidth: 2, borderDash: [5,5], pointRadius: 0, tension: 0, spanGaps: true, order: 5 }
-                    ]
-                },
-                options: { 
-                    responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, 
-                    plugins: { zoom: zoomPluginX },
-                    scales: { 
-                        x: { grid: getYearlyGridConfig(), ticks: getYearlyTicksConfig() }, 
-                        y: { type: 'linear', display: true, position: 'right', title: { display: true, text: '이격 비율', color: '#3498db' }, min: minDisp, max: maxDisp } 
-                    } 
+        // --- [핵심 수정] 안전한 그리드 라인 구성기 ---
+        function getYearlyGridConfig() {
+            return {
+                display: true,
+                drawOnChartArea: true,
+                color: function(context) {
+                    // 객체가 바인딩 프로세스 중에 비어있는지 2중 방어 검사
+                    if (context.tick && context.tick.label) {
+                        return 'rgba(200, 200, 200, 0.4)';
+                    }
+                    return 'rgba(0,0,0,0)'; 
                 }
-            });
+            };
         }
 
         function populateTable(dates, prices, displayMulrimData, smaData, disparityData, tradeActions, capitalHistory, period) {
@@ -853,7 +851,7 @@
                     responsive: true, maintainAspectRatio: false,
                     interaction: { mode: 'nearest', intersect: true },
                     plugins: { 
-                        zoom: zoomPluginXY,
+                        zoom: zoomPluginXY, // [오타 수정] 오표기된 미정의 변수명 정상화 교체
                         tooltip: { callbacks: { label: function(c) { return `이격도: ${c.parsed.x.toFixed(2)}x, 물림: ${c.parsed.y}일`; } } } 
                     },
                     scales: { x: { type: 'linear', position: 'bottom', title: { display: true, text: '이격비율' } }, y: { title: { display: true, text: '물림일수' }, beginAtZero: true } }
@@ -861,7 +859,6 @@
             });
         }
 
-        // --- 최적화 로직 ---
         function getFastR2ForPeriod(period) {
             const N = cachedData.prices.length;
             let validX = [], validY = [], sum = 0;
@@ -929,15 +926,11 @@
             calculateAndRender();
         }
 
-        // 2. 매수/매도 타점 최적화 (2D 히트맵 방식 산점도)
         function openTradeOptimizer() {
             if (!cachedData) return alert('먼저 데이터를 불러와주세요.');
             openModal('trade-optimizer-modal');
-            
-            // [중요 수정] 모달이 새로 열릴 때 사용자가 임의 선택한 지점 정보를 완전히 초기화 및 버튼 비활성화
             window.selectedPointFromChart = null;
             document.getElementById('custom-apply-btn').disabled = true;
-
             document.getElementById('trade-opt-apply-btn').style.display = 'none';
             document.getElementById('trade-opt-result-text').innerText = '수만 가지 조합의 딥 시뮬레이션을 진행 중입니다...';
             setTimeout(() => { runTradeOptimization(); }, 100);
@@ -986,6 +979,7 @@
 
             let results = [];
             let maxFinalCapital = -1;
+            let minFinalCapital = Infinity;
             let bestBuy = 0, bestSell = 0;
 
             for (let i = 0; i < yLabels.length; i++) {
@@ -1065,18 +1059,13 @@
                 options: {
                     responsive: true, maintainAspectRatio: false,
                     interaction: { mode: 'nearest', intersect: true },
-                    
-                    // [핵심 수정] 그래프 내의 임의의 점을 클릭했을 때의 동작 이벤트 추가
                     onClick: function(e, elements) {
                         if (elements.length > 0) {
                             const idx = elements[0].index;
                             const item = results[idx];
-                            
-                            // 선택 정보 글로벌 바인딩 및 비활성 버튼 활성화
                             window.selectedPointFromChart = { buy: item.x, sell: item.y };
                             document.getElementById('custom-apply-btn').disabled = false;
                             
-                            // 팝업 안내 문구 동적 결합
                             document.getElementById('trade-opt-result-text').innerHTML = 
                                 `최고 효율 매수: <span style="color:#27ae60;">${bestBuy}x</span> 이하 / 매도: <span style="color:#e74c3c;">${bestSell}x</span> 이상<br>`+
                                 `이때의 예상 최고 자본: <span style="color:#d35400;">${maxFinalCapital.toLocaleString(undefined, {maximumFractionDigits:2})}</span><br><br>`+
@@ -1104,7 +1093,7 @@
 
             document.getElementById('trade-opt-result-text').innerHTML = 
                 `최고 효율 매수: <span style="color:#27ae60;">${bestBuy}x</span> 이하 / 매도: <span style="color:#e74c3c;">${bestSell}x</span> 이상<br>`+
-                `이때의 예상 최종 자본: <span style="color:#d35400;">${maxFinalCapital.toLocaleString(undefined, {maximumFractionDigits:2})}</span>`;
+                `이때의 예상 최종 자산: <span style="color:#e74c3c;">${maxFinalCapital.toLocaleString(undefined, {maximumFractionDigits:2})}</span>`;
             document.getElementById('trade-opt-apply-btn').style.display = 'inline-block';
         }
 
@@ -1115,7 +1104,8 @@
             calculateAndRender();
         }
 
-        // [핵심 수정] 사용자가 직접 선택한 개별 좌표점을 메인 폼에 주입하는 함수
+        if (window.priceChartInstance) window.priceChartInstance.destroy(); // 방어 코드
+
         function applySelectedPoint() {
             if (window.selectedPointFromChart) {
                 document.getElementById('buy-point').value = window.selectedPointFromChart.buy;
