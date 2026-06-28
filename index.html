@@ -16,7 +16,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/dist/chartjs-plugin-zoom.min.js"></script>
 
     <style>
         body {
@@ -392,7 +392,6 @@
         window.currentAnalysis = null;
         window.selectedPointFromChart = null; 
 
-        // --- 공통 모달 및 Zoom 제어 로직 ---
         function openModal(modalId) {
             document.getElementById(modalId).style.display = 'flex';
             document.body.style.overflow = 'hidden';
@@ -583,17 +582,25 @@
                 }
             }
 
-            // 3. 백테스트 (초기 자본을 모두 주식으로 보유한 상태에서 시작)
+            // [핵심 수정] 3. 백테스트 (이격도 계산이 처음 가능해진 시점부터 전액 주식 보유로 시뮬레이션 구동)
+            let firstValidIdx = disparityData.findIndex(d => d !== null);
+            if (firstValidIdx === -1) firstValidIdx = 0; // 예외방지용 fallback
+
             let isHolding = true;
             let cash = 0;
-            let shares = initialCap / cachedData.prices[0]; 
+            let shares = initialCap / cachedData.prices[firstValidIdx]; // 이격도가 시작되는 바로 그 날짜의 종가로 전액 매수 진행
             
             let tradeActions = new Array(N).fill("-");
             let capitalHistory = new Array(N).fill(null);
 
-            tradeActions[0] = "초기 보유 시작";
+            tradeActions[firstValidIdx] = "초기 보유 시작";
 
-            for (let i = 0; i < N; i++) {
+            // 시뮬레이션 시작 이전 지점은 초기 자본금으로 임시 고정
+            for (let i = 0; i < firstValidIdx; i++) {
+                capitalHistory[i] = initialCap;
+            }
+
+            for (let i = firstValidIdx; i < N; i++) {
                 let d = disparityData[i];
                 let p = cachedData.prices[i];
                 
@@ -614,8 +621,8 @@
             }
             let finalCapital = capitalHistory[N - 1];
 
-            // CAGR 및 날짜 연산
-            const startDateStr = cachedData.dates[0];
+            // [핵심 수정] CAGR 및 날짜 연산을 전략 수행이 직접 일어난 이격도 첫 계산일 기준으로 변경
+            const startDateStr = cachedData.dates[firstValidIdx];
             const endDateStr = cachedData.dates[N - 1];
             const startDt = new Date(startDateStr);
             const endDt = new Date(endDateStr);
@@ -623,11 +630,11 @@
             const totalDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
             
             let totalYears = totalDays / 365.2425;
-            if (totalYears <= 0) totalYears = 0.001; // 에러 방지
+            if (totalYears <= 0) totalYears = 0.001; 
             
             const cagr = (Math.pow(finalCapital / initialCap, 1 / totalYears) - 1) * 100;
 
-            // 4. 물림일수 필터링
+            // 4. 물림일수
             let displayMulrimData = new Array(N);
             let safeMulrimData = new Array(N); 
             for (let i = 0; i < N; i++) {
@@ -686,7 +693,7 @@
                 let expectedMulrim = Math.max(0, Math.round(slope * latestDisparity + intercept)) || 0;
 
                 simPanel.innerHTML = `<div style="font-size: 16px; color:#7f8c8d; margin-bottom:5px;">📊 시뮬레이션 결과</div>` +
-                                     `<div style="font-size: 14px; font-weight: normal; color: #555;">기간: ${startDateStr} ~ ${endDateStr}</div>` +
+                                     `<div style="font-size: 14px; font-weight: normal; color: #555;">실수행 기간: ${startDateStr} ~ ${endDateStr}</div>` +
                                      `<div style="font-size: 14px; font-weight: normal; color: #555; margin-bottom:8px;">(<span style="color:#2c3e50; font-weight:bold;">${totalYears.toFixed(2)}년</span> / ${totalDays}일)</div>` +
                                      `<div class="eval-capital">${finalCapital.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</div>` +
                                      `<div style="font-size: 14px; font-weight: normal; color: #7f8c8d; margin-top:5px;">초기 자본: ${initialCap.toLocaleString()} <span style="margin: 0 5px;">|</span> CAGR: <span style="color:#e74c3c; font-weight:bold;">${cagr.toFixed(2)}%</span></div>`;
@@ -721,17 +728,12 @@
                     try {
                         const labels = this.chart.data.labels;
                         if (!labels) return null;
-                        
                         if (Math.floor(val) !== val) return null; 
-                        
                         const label = labels[val];
                         if (!label || label.length < 4) return null;
-
                         if (val === 0) return label.substring(0, 4) + '-01';
-                        
                         const prevLabel = labels[val - 1];
                         if (!prevLabel || prevLabel.length < 4) return null;
-                        
                         if (label.substring(0, 4) !== prevLabel.substring(0, 4)) {
                             return label.substring(0, 4) + '-01';
                         }
@@ -1039,7 +1041,7 @@
                 return alert("데이터가 너무 적어 최적화할 수 없습니다.");
             }
 
-            let step = 0.02; 
+            let step = 0.05; 
             let startD = Math.floor(minD * 100) / 100;
             let endD = Math.ceil(maxD * 100) / 100;
 
@@ -1054,17 +1056,22 @@
             let minFinalCapital = Infinity;
             let bestBuy = 0, bestSell = 0;
 
+            // 시뮬레이터 자체는 원래 순서대로 연산 진행
             for (let i = 0; i < yLabels.length; i++) {
                 let sellPt = yLabels[i];
                 for (let j = 0; j < xLabels.length; j++) {
                     let buyPt = xLabels[j];
                     if (buyPt >= sellPt) continue;
 
+                    // 이격도가 계산되는 첫 날 기준 전액 매수로 시작하는 로직 적용
+                    let firstValidIdx = disparities.findIndex(d => d !== null);
+                    if (firstValidIdx === -1) firstValidIdx = 0;
+
                     let cash = 0;
-                    let shares = initCap / cachedData.prices[0];
+                    let shares = initCap / cachedData.prices[firstValidIdx];
                     let isHolding = true;
                     
-                    for (let k = 0; k < N; k++) {
+                    for (let k = firstValidIdx; k < N; k++) {
                         let d = disparities[k];
                         if (d === null) continue;
                         
@@ -1081,7 +1088,6 @@
                     }
                     
                     let finalCap = cash + (shares * cachedData.prices[N - 1]);
-                    // [핵심 변경] x축과 y축의 데이터를 맞바꾸어 담음 (buy/sell 명확히 분리)
                     results.push({ buy: buyPt, sell: sellPt, v: finalCap });
 
                     if (finalCap > maxFinalCapital) {
@@ -1102,9 +1108,8 @@
             let scatterColors = [];
             
             for (let item of results) {
-                // [핵심 변경] 그래프 상에서 X축은 Sell, Y축은 Buy로 표시
+                // [요청 반영 축 반전] X축은 매도 기준선(Sell), Y축은 매수 기준선(Buy)
                 scatterData.push({ x: item.sell, y: item.buy });
-                
                 let t = (maxFinalCapital === minFinalCapital) ? 0 : (maxFinalCapital - item.v) / (maxFinalCapital - minFinalCapital);
                 let v = t * 4; 
                 let r, g, b;
@@ -1138,8 +1143,6 @@
                         if (elements.length > 0) {
                             const idx = elements[0].index;
                             const item = results[idx];
-                            
-                            // 선택 정보 업데이트
                             window.selectedPointFromChart = { buy: item.buy, sell: item.sell };
                             document.getElementById('custom-apply-btn').disabled = false;
                             
@@ -1156,14 +1159,14 @@
                                 label: function(context) {
                                     let idx = context.dataIndex;
                                     let cap = results[idx].v;
-                                    // [핵심 변경] 툴팁 내용 수정
+                                    // [축 반전 정렬] 매도(x), 매수(y)
                                     return `매도: ${context.parsed.x.toFixed(2)}x, 매수: ${context.parsed.y.toFixed(2)}x | 자산: ${cap.toLocaleString(undefined, {maximumFractionDigits:0})}`;
                                 }
                             }
                         }
                     },
                     scales: {
-                        // [핵심 변경] 축 이름 변경
+                        // [요청 반영 축 명칭 전환]
                         x: { title: { display: true, text: '매도 기준선 (Sell)' } },
                         y: { title: { display: true, text: '매수 기준선 (Buy)' } }
                     }
