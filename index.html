@@ -1,4 +1,4 @@
-test3<!DOCTYPE html>
+4<!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
@@ -30,10 +30,8 @@ test3<!DOCTYPE html>
             overflow-x: hidden;
         }
         
+        /* 모바일 터치 이벤트 충돌 방지 핵심 코드 */
         canvas {
-            touch-action: pan-y !important; /* 위아래 스크롤 허용, 좌우는 차트 이동 */
-        }
-        #scatterChart, #tradeOptimizerChart {
             touch-action: none !important; 
         }
 
@@ -123,9 +121,6 @@ test3<!DOCTYPE html>
         .btn-trade-opt:hover { background-color: #a04000; }
         .btn-info { background-color: #2980b9; }
         .btn-info:hover { background-color: #2471a3; }
-        .btn-apply-selected { background-color: #2980b9; }
-        .btn-apply-selected:hover { background-color: #1f618d; }
-        .btn-apply-selected:disabled { background-color: #bdc3c7; cursor: not-allowed; }
         .btn-reset { background-color: #7f8c8d; }
         .btn-reset:hover { background-color: #636e72; }
         .btn-download { background-color: #27ae60; margin-top: 10px; }
@@ -203,7 +198,7 @@ test3<!DOCTYPE html>
         .modal-overlay {
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.85);
+            background: rgba(0,0,0,0.85); /* 모달 열릴 때 배경을 약간 더 어둡게 */
             display: none;
             align-items: center;
             justify-content: center;
@@ -229,7 +224,6 @@ test3<!DOCTYPE html>
             justify-content: center;
             gap: 10px;
             margin-top: 15px;
-            flex-wrap: wrap;
         }
     </style>
 </head>
@@ -261,7 +255,6 @@ test3<!DOCTYPE html>
             <p id="trade-opt-result-text" style="font-size:16px; font-weight:bold; margin:15px 0;">모든 매수/매도 조합을 시뮬레이션 중입니다...</p>
             <div class="modal-actions">
                 <button id="trade-opt-apply-btn" class="btn btn-trade-opt" style="display:none; margin:0;" onclick="applyTradeOptimization()">최적 타점 적용하기</button>
-                <button id="custom-apply-btn" class="btn btn-apply-selected" style="margin:0;" disabled onclick="applySelectedPoint()">해당 타점 적용하기</button>
                 <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(tradeOptChartInstance)">🔍 줌 초기화</button>
                 <button class="btn" style="margin:0;" onclick="closeModal('trade-optimizer-modal')">닫기</button>
             </div>
@@ -297,7 +290,7 @@ test3<!DOCTYPE html>
     <div class="widget-container">
         <div class="header">
             <h1 id="main-title">Custom Analytics & Simulator</h1>
-            <p>매수, 매도 이격도 지점을 설정하여 최적의 수익률을 시뮬레이션 해보세요.<br><span style="font-size:12px; color:#95a5a6;">(PC: Ctrl+휠 확대 / 모바일: 두 손가락 확대)</span></p>
+            <p>매수, 매도 이격도 지점을 설정하여 최적의 수익률을 시뮬레이션 해보세요.</p>
         </div>
 
         <div class="control-panel">
@@ -314,8 +307,8 @@ test3<!DOCTYPE html>
             <div style="width: 100%; height: 0;"></div> 
             
             <label>초기 자본 <input type="number" id="initial-cap" value="10000" min="1"></label>
-            <label style="color:#27ae60;">매수(이하) <input type="number" id="buy-point" step="0.05" value="1.5"></label>
-            <label style="color:#e74c3c;">매도(이상) <input type="number" id="sell-point" step="0.05" value="3.0"></label>
+            <label style="color:#27ae60;">매수(이하) <input type="number" id="buy-point" step="0.05" value="0.8"></label>
+            <label style="color:#e74c3c;">매도(이상) <input type="number" id="sell-point" step="0.05" value="1.2"></label>
             
             <div class="btn-group">
                 <button class="btn" onclick="handleRenderClick()">데이터 갱신 및 시뮬레이션</button>
@@ -385,20 +378,21 @@ test3<!DOCTYPE html>
         let scatterChartInstance = null;
         
         let bestOptimizedPeriod = 1500;
-        let bestOptimizedBuy = 1.5;
-        let bestOptimizedSell = 3.0;
+        let bestOptimizedBuy = 0.8;
+        let bestOptimizedSell = 1.2;
 
         window.currentAnalysis = null;
-        window.selectedPointFromChart = null; 
 
         // --- 공통 모달 및 Zoom 제어 로직 ---
         function openModal(modalId) {
             document.getElementById(modalId).style.display = 'flex';
+            // 모달 열릴 때 백그라운드 스크롤 방지 (중요!)
             document.body.style.overflow = 'hidden';
         }
 
         function closeModal(modalId) {
             document.getElementById(modalId).style.display = 'none';
+            // 모달 닫힐 때 백그라운드 스크롤 복구
             document.body.style.overflow = 'auto';
         }
 
@@ -413,22 +407,15 @@ test3<!DOCTYPE html>
             resetChartZoom(disparityChartInstance);
         }
 
+        // --- 플러그인 Zoom 옵션 (정확한 객체 구조화) ---
         const zoomPluginX = {
             pan: { enabled: true, mode: 'x' },
-            zoom: { 
-                wheel: { enabled: true, modifierKey: 'ctrl' }, 
-                pinch: { enabled: true }, 
-                mode: 'x' 
-            }
+            zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
         };
 
         const zoomPluginXY = {
             pan: { enabled: true, mode: 'xy' },
-            zoom: { 
-                wheel: { enabled: true, modifierKey: 'ctrl' }, 
-                pinch: { enabled: true }, 
-                mode: 'xy' 
-            }
+            zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }
         };
 
         async function handleRenderClick() {
@@ -529,8 +516,8 @@ test3<!DOCTYPE html>
 
             const period = parseInt(document.getElementById('ma-period').value) || 1500;
             const initialCap = parseFloat(document.getElementById('initial-cap').value) || 10000;
-            const buyPoint = parseFloat(document.getElementById('buy-point').value) || 1.5;
-            const sellPoint = parseFloat(document.getElementById('sell-point').value) || 3.0;
+            const buyPoint = parseFloat(document.getElementById('buy-point').value) || 0.8;
+            const sellPoint = parseFloat(document.getElementById('sell-point').value) || 1.2;
 
             if(buyPoint >= sellPoint) {
                 alert("매수 지점은 매도 지점보다 반드시 작아야 합니다.");
@@ -697,51 +684,79 @@ test3<!DOCTYPE html>
             populateTable(cachedData.dates, cachedData.prices, displayMulrimData, smaData, disparityData, tradeActions, capitalHistory, period);
         }
 
-        // --- [핵심 수정] 예외 감지 장치가 보완된 안전한 X축 틱 구성기 ---
+        // --- 차트 렌더링 로직 (Chart.js) ---
         function getYearlyTicksConfig() {
             return {
-                autoSkip: false,
-                maxRotation: 0,
-                callback: function(val, index, ticks) {
+                autoSkip: false, maxRotation: 0,
+                callback: function(val, index) {
                     const currentLabel = this.getLabelForValue(val);
-                    // 예외 확인: 레이블이 없거나 문자열이 아닐 경우 즉시 튕겨냄 (줌 에러 방지)
-                    if (!currentLabel || typeof currentLabel !== 'string' || currentLabel.length < 4) return null;
-                    
-                    if (index === 0) return currentLabel.substring(0, 4) + '-01';
-                    
-                    // index - 1 방식을 지양하고 Chart.js 가 전달한 틱 오브젝트 풀에서 이전 요소를 역산
-                    const prevTick = ticks[index - 1];
-                    if (!prevTick) return null;
-                    
-                    const prevLabel = this.getLabelForValue(prevTick.value);
-                    if (!prevLabel || typeof prevLabel !== 'string' || prevLabel.length < 4) return null;
-                    
-                    const currYear = currentLabel.substring(0, 4);
-                    const prevYear = prevLabel.substring(0, 4);
-                    
-                    if (currYear !== prevYear) {
-                        return currYear + '-01'; 
-                    }
+                    if (index === 0) return currentLabel;
+                    const prevLabel = this.getLabelForValue(val - 1);
+                    if (currentLabel.substring(0, 4) !== prevLabel.substring(0, 4)) return currentLabel.substring(0, 4) + '-01'; 
                     return null;
                 }
             };
         }
-
-        // --- [핵심 수정] 안전한 그리드 라인 구성기 ---
         function getYearlyGridConfig() {
             return {
-                display: true,
-                drawOnChartArea: true,
-                color: function(context) {
-                    // 객체가 바인딩 프로세스 중에 비어있는지 2중 방어 검사
-                    if (context.tick && context.tick.label) {
-                        return 'rgba(200, 200, 200, 0.4)';
-                    }
-                    return 'rgba(0,0,0,0)'; 
-                }
+                display: true, drawOnChartArea: true,
+                color: function(context) { return context.tick.label ? 'rgba(200, 200, 200, 0.4)' : 'rgba(0,0,0,0)'; }
             };
         }
 
+        function renderPriceChart(labels, priceData, smaData, priceAvgLineData, priceBuyLineData, priceSellLineData, avgDisparity, period) {
+            const ctx = document.getElementById('priceChart').getContext('2d');
+            if (priceChartInstance) priceChartInstance.destroy();
+            priceChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: `${cachedCompanyName} 수정종가`, data: priceData, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, order: 1 },
+                        { label: `평균 이격 위치 (${avgDisparity.toFixed(2)}x)`, data: priceAvgLineData, borderColor: '#000000', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 2 },
+                        { label: `${period}일 이동평균선`, data: smaData, borderColor: '#f1c40f', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 3 },
+                        { label: `매도 타점 가격`, data: priceSellLineData, borderColor: '#e74c3c', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 4 },
+                        { label: `매수 타점 가격`, data: priceBuyLineData, borderColor: '#27ae60', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 5 }
+                    ]
+                },
+                options: { 
+                    responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, 
+                    plugins: { zoom: zoomPluginX },
+                    scales: { 
+                        x: { grid: getYearlyGridConfig(), ticks: getYearlyTicksConfig() }, 
+                        y: { type: 'logarithmic', display: true, position: 'left', title: { display: true, text: '가격(로그)', color: '#333' } } 
+                    } 
+                }
+            });
+        }
+
+        function renderDisparityChart(labels, disparityData, baseLineData, avgLineData, buyLineData, sellLineData, avgDisparity, maxDisp, minDisp, period) {
+            const ctx = document.getElementById('disparityChart').getContext('2d');
+            if (disparityChartInstance) disparityChartInstance.destroy();
+            disparityChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [ 
+                        { label: `${period}일 이격 비율`, data: disparityData, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, fill: true, order: 1 },
+                        { label: `평균 이격도 (${avgDisparity.toFixed(2)}x)`, data: avgLineData, borderColor: '#000000', borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true, order: 2 },
+                        { label: `이평선 (1.0x)`, data: baseLineData, borderColor: '#f1c40f', borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true, order: 3 },
+                        { label: `매도선`, data: sellLineData, borderColor: '#e74c3c', borderWidth: 2, borderDash: [5,5], pointRadius: 0, tension: 0, spanGaps: true, order: 4 },
+                        { label: `매수선`, data: buyLineData, borderColor: '#27ae60', borderWidth: 2, borderDash: [5,5], pointRadius: 0, tension: 0, spanGaps: true, order: 5 }
+                    ]
+                },
+                options: { 
+                    responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, 
+                    plugins: { zoom: zoomPluginX },
+                    scales: { 
+                        x: { grid: getYearlyGridConfig(), ticks: getYearlyTicksConfig() }, 
+                        y: { type: 'linear', display: true, position: 'right', title: { display: true, text: '이격 비율', color: '#3498db' }, min: minDisp, max: maxDisp } 
+                    } 
+                }
+            });
+        }
+
+        // --- 표 생성 및 CSV ---
         function populateTable(dates, prices, displayMulrimData, smaData, disparityData, tradeActions, capitalHistory, period) {
             const tableBody = document.getElementById('table-body');
             let htmlContent = '';
@@ -751,11 +766,14 @@ test3<!DOCTYPE html>
                 const sma = smaData[i] !== null ? smaData[i].toFixed(4) : '-';
                 const disparity = disparityData[i] !== null ? disparityData[i].toFixed(4) : '-';
                 const mulrim = displayMulrimData[i]; 
+                
                 const action = tradeActions[i];
                 let actionStyle = '';
                 if(action.includes("매수")) actionStyle = 'color:#27ae60; font-weight:bold;';
                 else if(action.includes("매도")) actionStyle = 'color:#e74c3c; font-weight:bold;';
+
                 const capital = capitalHistory[i] !== null ? capitalHistory[i].toFixed(2) : '-';
+
                 htmlContent += `<tr><td>${date}</td><td>${price}</td><td>${sma}</td><td>${disparity}</td><td>${mulrim}</td><td style="${actionStyle}">${action}</td><td>${capital}</td></tr>`;
             }
             tableBody.innerHTML = htmlContent;
@@ -785,6 +803,7 @@ test3<!DOCTYPE html>
             URL.revokeObjectURL(url);
         }
 
+        // [시계열 모달]
         function openTimeseriesModal() {
             if (!window.currentAnalysis) return alert('먼저 데이터를 계산해주세요.');
             openModal('timeseries-modal');
@@ -811,6 +830,7 @@ test3<!DOCTYPE html>
             });
         }
 
+        // [산점도 모달]
         function openScatterModal() {
             if (!window.currentAnalysis) return alert('먼저 데이터를 계산해주세요.');
             openModal('scatter-modal');
@@ -851,7 +871,7 @@ test3<!DOCTYPE html>
                     responsive: true, maintainAspectRatio: false,
                     interaction: { mode: 'nearest', intersect: true },
                     plugins: { 
-                        zoom: zoomPluginXY, // [오타 수정] 오표기된 미정의 변수명 정상화 교체
+                        zoom: zoomPluginXY,
                         tooltip: { callbacks: { label: function(c) { return `이격도: ${c.parsed.x.toFixed(2)}x, 물림: ${c.parsed.y}일`; } } } 
                     },
                     scales: { x: { type: 'linear', position: 'bottom', title: { display: true, text: '이격비율' } }, y: { title: { display: true, text: '물림일수' }, beginAtZero: true } }
@@ -859,6 +879,7 @@ test3<!DOCTYPE html>
             });
         }
 
+        // --- 최적화 로직 ---
         function getFastR2ForPeriod(period) {
             const N = cachedData.prices.length;
             let validX = [], validY = [], sum = 0;
@@ -888,6 +909,7 @@ test3<!DOCTYPE html>
             return 0;
         }
 
+        // 1. 기준일수 최적화
         function openOptimizer() {
             if (!cachedData) return alert('먼저 데이터를 불러와주세요.');
             openModal('optimizer-modal');
@@ -926,11 +948,10 @@ test3<!DOCTYPE html>
             calculateAndRender();
         }
 
+        // 2. 매수/매도 타점 최적화
         function openTradeOptimizer() {
             if (!cachedData) return alert('먼저 데이터를 불러와주세요.');
             openModal('trade-optimizer-modal');
-            window.selectedPointFromChart = null;
-            document.getElementById('custom-apply-btn').disabled = true;
             document.getElementById('trade-opt-apply-btn').style.display = 'none';
             document.getElementById('trade-opt-result-text').innerText = '수만 가지 조합의 딥 시뮬레이션을 진행 중입니다...';
             setTimeout(() => { runTradeOptimization(); }, 100);
@@ -1030,6 +1051,7 @@ test3<!DOCTYPE html>
             
             for (let item of results) {
                 scatterData.push({ x: item.x, y: item.y });
+                
                 let t = (maxFinalCapital === minFinalCapital) ? 0 : (maxFinalCapital - item.v) / (maxFinalCapital - minFinalCapital);
                 let v = t * 4; 
                 let r, g, b;
@@ -1059,19 +1081,6 @@ test3<!DOCTYPE html>
                 options: {
                     responsive: true, maintainAspectRatio: false,
                     interaction: { mode: 'nearest', intersect: true },
-                    onClick: function(e, elements) {
-                        if (elements.length > 0) {
-                            const idx = elements[0].index;
-                            const item = results[idx];
-                            window.selectedPointFromChart = { buy: item.x, sell: item.y };
-                            document.getElementById('custom-apply-btn').disabled = false;
-                            
-                            document.getElementById('trade-opt-result-text').innerHTML = 
-                                `최고 효율 매수: <span style="color:#27ae60;">${bestBuy}x</span> 이하 / 매도: <span style="color:#e74c3c;">${bestSell}x</span> 이상<br>`+
-                                `이때의 예상 최고 자본: <span style="color:#d35400;">${maxFinalCapital.toLocaleString(undefined, {maximumFractionDigits:2})}</span><br><br>`+
-                                `<span style="color:#2980b9; font-size:15px; font-weight:bold;">[선택된 타점] 매수: ${item.x}x / 매도: ${item.y}x (최종자본: ${item.v.toLocaleString(undefined, {maximumFractionDigits:2})})</span>`;
-                        }
-                    },
                     plugins: {
                         zoom: zoomPluginXY,
                         tooltip: {
@@ -1102,17 +1111,6 @@ test3<!DOCTYPE html>
             document.getElementById('sell-point').value = bestOptimizedSell;
             closeModal('trade-optimizer-modal');
             calculateAndRender();
-        }
-
-        if (window.priceChartInstance) window.priceChartInstance.destroy(); // 방어 코드
-
-        function applySelectedPoint() {
-            if (window.selectedPointFromChart) {
-                document.getElementById('buy-point').value = window.selectedPointFromChart.buy;
-                document.getElementById('sell-point').value = window.selectedPointFromChart.sell;
-                closeModal('trade-optimizer-modal');
-                calculateAndRender();
-            }
         }
 
         window.onload = handleRenderClick;
