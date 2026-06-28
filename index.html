@@ -367,14 +367,6 @@
     </div>
 
     <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js').catch(err => {
-                    console.log('Service Worker registration failed: ', err);
-                });
-            });
-        }
-
         let cachedTicker = '';
         let cachedCompanyName = 'TQQQ';
         let cachedData = null;
@@ -393,6 +385,7 @@
         window.currentAnalysis = null;
         window.selectedPointFromChart = null; 
 
+        // --- 공통 모달 및 줌 제어 로직 ---
         function openModal(modalId) {
             document.getElementById(modalId).style.display = 'flex';
             document.body.style.overflow = 'hidden';
@@ -404,9 +397,7 @@
         }
 
         function resetChartZoom(chartInstance) {
-            if (chartInstance) {
-                chartInstance.resetZoom();
-            }
+            if (chartInstance) chartInstance.resetZoom();
         }
 
         function resetMainChartsZoom() {
@@ -416,20 +407,12 @@
 
         const zoomPluginX = {
             pan: { enabled: true, mode: 'x' },
-            zoom: { 
-                wheel: { enabled: true, modifierKey: 'ctrl' }, 
-                pinch: { enabled: true }, 
-                mode: 'x' 
-            }
+            zoom: { wheel: { enabled: true, modifierKey: 'ctrl' }, pinch: { enabled: true }, mode: 'x' }
         };
 
         const zoomPluginXY = {
             pan: { enabled: true, mode: 'xy' },
-            zoom: { 
-                wheel: { enabled: true, modifierKey: 'ctrl' }, 
-                pinch: { enabled: true }, 
-                mode: 'xy' 
-            }
+            zoom: { wheel: { enabled: true, modifierKey: 'ctrl' }, pinch: { enabled: true }, mode: 'xy' }
         };
 
         async function handleRenderClick() {
@@ -454,78 +437,64 @@
             }
         }
 
+        // [엔진 복구 및 보완] 안정적인 v8 JSON API 기반에 일봉 촘촘함 강제 고정 옵션 연동
         async function fetchNewData(ticker) {
             const loadingEl = document.getElementById('loading');
             loadingEl.style.display = 'block';
-            loadingEl.innerHTML = `${ticker} 일봉 데이터를 추출 중입니다...<br><span style="font-size:14px; color:#7f8c8d;">(야후 CSV 우회 엔진 가동 중)</span>`;
+            loadingEl.innerHTML = `${ticker} 데이터를 정밀 추출 중입니다...<br><span style="font-size:14px; color:#7f8c8d;">(야후 차트 안정 엔진 구동 중)</span>`;
             loadingEl.style.color = '#3498db';
 
             const currentUnixTime = Math.floor(Date.now() / 1000); 
-
-            // 1. 차트 제목용 회사 메타데이터 가져오기 (JSON 단기 조회)
-            let companyName = ticker;
-            try {
-                const metaUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=1d&interval=1d`;
-                const metaProxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(metaUrl)}`;
-                const metaRes = await fetch(metaProxy);
-                if (metaRes.ok) {
-                    const metaJson = await metaRes.json();
-                    if (metaJson.chart && metaJson.chart.result) {
-                        const meta = metaJson.chart.result[0].meta;
-                        companyName = meta.shortName || meta.longName || ticker;
-                    }
-                }
-            } catch(e) { console.warn("메타데이터 로드 실패, 티커명 대체"); }
-            cachedCompanyName = companyName;
-
-            // [핵심 변경] 2. 월간 병합 현상을 완벽히 차단하는 야후 다운로드(CSV) 전용 API 사용
-            const csvUrl = `https://query1.finance.yahoo.com/v7/finance/download/${ticker}?period1=0&period2=${currentUnixTime}&interval=1d&events=history`;
+            // period1=0 세팅과 함께 includeAdjustedClose=true를 조합하여 전 기간 누락 없는 오리지널 일봉 데이터 호출
+            const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?period1=0&period2=${currentUnixTime}&interval=1d&includeAdjustedClose=true`;
 
             const proxyList = [
-                `https://api.allorigins.win/raw?url=${encodeURIComponent(csvUrl)}`,
-                `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(csvUrl)}`,
-                `https://corsproxy.io/?${encodeURIComponent(csvUrl)}`
+                `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
+                `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
+                `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
             ];
 
             try {
-                let csvText = null;
+                let dataFetched = null;
                 for (let proxy of proxyList) {
                     try {
-                        const response = await fetch(proxy, { method: 'GET' });
+                        const response = await fetch(proxy, { method: 'GET', headers: { 'Accept': 'application/json' }});
                         if (response.ok) {
-                            const text = await response.text();
-                            // 올바른 CSV 포맷이 수신되었는지 확인
-                            if (text && text.includes("Date,Open,High,Low,Close")) { 
-                                csvText = text; 
-                                break; 
-                            }
+                            const data = await response.json();
+                            if (data && data.chart && data.chart.result) { dataFetched = data; break; }
                         }
                     } catch (error) { console.warn(`Proxy fail:`, error); }
                 }
 
-                if (!csvText) throw new Error('순수 일봉 CSV 데이터 로드 실패');
+                if (!dataFetched) throw new Error('데이터 로드 실패');
 
-                // CSV 문자열 파싱
+                const result = dataFetched.chart.result[0];
+                const meta = result.meta;
+                const companyName = meta.shortName || meta.longName || ticker;
+                cachedCompanyName = companyName;
+
+                const timestamps = result.timestamp;
+                const quotes = result.indicators.quote[0];
+                const adjcloses = result.indicators.adjclose ? result.indicators.adjclose[0].adjclose : null;
+
                 let dates = []; let prices = [];
-                const lines = csvText.trim().split('\n');
-                
-                for (let i = 1; i < lines.length; i++) {
-                    const cols = lines[i].split(',');
-                    // CSV 구조: Date,Open,High,Low,Close,Adj Close,Volume
-                    if (cols.length >= 6) {
-                        const dateStr = cols[0];
-                        let p = parseFloat(cols[5]); // 수정종가 우선
-                        if (isNaN(p) || p <= 0) p = parseFloat(cols[4]); // 오류 시 일반 종가
-                        
-                        if (!isNaN(p) && p > 0) {
-                            dates.push(dateStr);
-                            prices.push(p);
-                        }
+                if (timestamps && timestamps.length > 0) {
+                    for (let i = 0; i < timestamps.length; i++) {
+                        let p = adjcloses ? adjcloses[i] : quotes.close[i];
+                        if (!p || p <= 0 || !Number.isFinite(p)) continue;
+
+                        const dateObj = new Date(timestamps[i] * 1000);
+                        const yyyy = dateObj.getUTCFullYear();
+                        const mm = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+                        const dd = String(dateObj.getUTCDate()).padStart(2, '0');
+
+                        dates.push(`${yyyy}-${mm}-${dd}`);
+                        prices.push(p);
                     }
                 }
 
                 const N = prices.length;
-                if (N === 0) throw new Error("유효한 가격 데이터가 없습니다.");
+                if (N === 0) throw new Error("유효한 일봉 데이터가 없습니다.");
 
                 let rawMulrimData = new Array(N).fill(0);
                 let maxMulrim = 0;
@@ -545,7 +514,7 @@
 
             } catch (error) {
                 console.error(error);
-                loadingEl.innerHTML = `데이터 추출 실패<br><span style="font-size:13px;">티커명이나 상장 상태를 다시 확인해 주세요.</span>`;
+                loadingEl.innerHTML = `데이터 추출 실패<br><span style="font-size:13px;">티커명이나 인터넷 상태를 다시 확인해 주세요.</span>`;
                 loadingEl.style.color = '#e74c3c';
                 setTimeout(() => { loadingEl.style.display = 'none'; }, 3000);
             }
@@ -559,17 +528,11 @@
             const buyPoint = parseFloat(document.getElementById('buy-point').value) || 1.5;
             const sellPoint = parseFloat(document.getElementById('sell-point').value) || 3.0;
 
-            if(buyPoint >= sellPoint) {
-                alert("매수 지점은 매도 지점보다 반드시 작아야 합니다.");
-                return;
-            }
-
             let smaData = [], disparityData = [], validDisparities = [], windowPrices = [];
             const N = cachedData.prices.length;
             const maxMulrim = cachedData.maxMulrim;
             const rawMulrimData = cachedData.rawMulrimData;
 
-            // 1. 이평선 및 이격도 계산
             for (let i = 0; i < N; i++) {
                 const currentPrice = cachedData.prices[i];
                 windowPrices.push(currentPrice);
@@ -588,7 +551,6 @@
 
             let avgDisparity = validDisparities.length > 0 ? validDisparities.reduce((a, b) => a + b, 0) / validDisparities.length : 0;
             
-            // 2. 기준선 데이터 생성
             let disparityBaseLineData = [], disparityBuyLineData = [], disparitySellLineData = [];
             let disparityAvgLineData = [], priceAvgDisparityLineData = [];
             let priceBuyLineData = [], priceSellLineData = [];
@@ -609,7 +571,6 @@
                 }
             }
 
-            // 3. 백테스트 (초기 자본 전액 주식 보유 상태 반영)
             let firstValidIdx = disparityData.findIndex(d => d !== null);
             if (firstValidIdx === -1) firstValidIdx = 0; 
 
@@ -659,7 +620,6 @@
             
             const cagr = (Math.pow(finalCapital / initialCap, 1 / totalYears) - 1) * 100;
 
-            // 4. 물림일수 필터링
             let displayMulrimData = new Array(N);
             let safeMulrimData = new Array(N); 
             for (let i = 0; i < N; i++) {
@@ -672,7 +632,6 @@
                 }
             }
 
-            // 5. 회귀분석
             let rSquared = 0, slope = 0, intercept = 0, validX = [], validY = [];
             for (let i = 0; i < N; i++) {
                 if (disparityData[i] !== null && safeMulrimData[i] !== null) {
@@ -745,7 +704,7 @@
             populateTable(cachedData.dates, cachedData.prices, displayMulrimData, smaData, disparityData, tradeActions, capitalHistory, period);
         }
 
-        // --- [핵심 개선] 줌인 상태에 맞춰 동적으로 라벨 표시를 조절하는 똑똑한 틱(Tick) 구성 함수 ---
+        // --- 줌 스케일에 유연하게 대처하는 지능형 틱 라벨링 함수 ---
         function getYearlyTicksConfig() {
             return {
                 autoSkip: false,
@@ -754,33 +713,24 @@
                     try {
                         const labels = this.chart.data.labels;
                         if (!labels) return null;
-                        
-                        // 줌 플러그인용 가상(소수점) 인덱스 무시
                         if (Math.floor(val) !== val) return null; 
                         
-                        const label = labels[val]; // 예: '2023-01-05'
+                        const label = labels[val];
                         if (!label || label.length < 10) return null;
-                        
-                        // 차트에 현재 표시되고 있는 틱(데이터 포인트)의 개수
                         const visibleTicksCount = ticks.length;
 
-                        // 1. 크게 확대됨 (약 2달치 이내) -> 모든 날짜 표시
                         if (visibleTicksCount < 60) {
-                            return label; 
-                        } 
-                        // 2. 중간 확대됨 (약 1년치 이내) -> 월 단위(매달 초) 표시
-                        else if (visibleTicksCount < 300) {
+                            return label; // 고배율 확대 시 일자 표출
+                        } else if (visibleTicksCount < 300) {
                             const day = parseInt(label.substring(8, 10));
-                            if (day <= 3) return label.substring(0, 7); // 예: '2023-01'
+                            if (day <= 3) return label.substring(0, 7); // 월 단위 표출
                             return null;
-                        } 
-                        // 3. 전체 화면 (수년~수십 년) -> 연도 단위로 표시
-                        else {
+                        } else {
                             if (val === 0) return label.substring(0, 4) + '-01';
                             const prevLabel = labels[val - 1];
                             if (!prevLabel) return null;
                             if (label.substring(0, 4) !== prevLabel.substring(0, 4)) {
-                                return label.substring(0, 4) + '-01';
+                                return label.substring(0, 4) + '-01'; // 기본 연도 표출
                             }
                             return null;
                         }
@@ -791,17 +741,12 @@
 
         function getYearlyGridConfig() {
             return {
-                display: true,
-                drawOnChartArea: true,
+                display: true, drawOnChartArea: true,
                 color: function(context) {
                     try {
-                        if (context.tick && context.tick.label && context.tick.label.length > 0) {
-                            return 'rgba(200, 200, 200, 0.4)';
-                        }
+                        if (context.tick && context.tick.label && context.tick.label.length > 0) return 'rgba(200, 200, 200, 0.4)';
                         return 'rgba(0,0,0,0)';
-                    } catch(e) {
-                        return 'rgba(0,0,0,0)';
-                    }
+                    } catch(e) { return 'rgba(0,0,0,0)'; }
                 }
             };
         }
@@ -1045,10 +990,8 @@
         function openTradeOptimizer() {
             if (!cachedData) return alert('먼저 데이터를 불러와주세요.');
             openModal('trade-optimizer-modal');
-            
             window.selectedPointFromChart = null;
             document.getElementById('custom-apply-btn').disabled = true;
-
             document.getElementById('trade-opt-apply-btn').style.display = 'none';
             document.getElementById('trade-opt-result-text').innerText = '수만 가지 조합의 딥 시뮬레이션을 진행 중입니다...';
             setTimeout(() => { runTradeOptimization(); }, 100);
