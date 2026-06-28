@@ -14,6 +14,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Stock Analytics">
 
+    <!-- Chart.js 및 Zoom 플러그인 로드 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
@@ -30,7 +31,6 @@
             overflow-x: hidden;
         }
         
-        /* 터치 및 스크롤 충돌 방지 */
         canvas {
             touch-action: pan-y !important; /* 위아래 스크롤 허용, 좌우는 차트 이동 */
         }
@@ -239,6 +239,7 @@
 
     <div id="loading">데이터를 불러오는 중입니다...</div>
 
+    <!-- 1. 이격도 기준일수 최적화 모달창 -->
     <div id="optimizer-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 style="font-size: 18px; margin-top: 0;">📈 기준일수 최적화 분석기 (R² 기반)</h2>
@@ -254,6 +255,7 @@
         </div>
     </div>
 
+    <!-- 2. 매수/매도 최적화 모달창 -->
     <div id="trade-optimizer-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 style="font-size: 18px; margin-top: 0; color:#d35400;">📊 매수/매도 타점 최적화</h2>
@@ -270,6 +272,7 @@
         </div>
     </div>
 
+    <!-- 3. 시간흐름 비교 모달창 -->
     <div id="timeseries-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 style="font-size: 18px; margin-top: 0; color:#2c3e50;">📅 날짜별 이격도 & 물림일수 추이</h2>
@@ -283,6 +286,7 @@
         </div>
     </div>
 
+    <!-- 4. 산점도 모달창 -->
     <div id="scatter-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 style="font-size: 18px; margin-top: 0; color:#2c3e50;">📈 상관관계 산점도 및 추세선</h2>
@@ -333,6 +337,7 @@
             </div>
         </div>
 
+        <!-- 분리된 패널 -->
         <div id="simulation-panel" class="simulation-panel"></div>
         <div id="evaluation-panel" class="evaluation-panel"></div>
         
@@ -437,16 +442,16 @@
             }
         }
 
-        // [엔진 복구 및 보완] 안정적인 v8 JSON API 기반에 일봉 촘촘함 강제 고정 옵션 연동
+        // 안정적인 v8 JSON API 기반에 일봉 촘촘함 강제 고정 옵션 연동
         async function fetchNewData(ticker) {
             const loadingEl = document.getElementById('loading');
             loadingEl.style.display = 'block';
-            loadingEl.innerHTML = `${ticker} 데이터를 정밀 추출 중입니다...<br><span style="font-size:14px; color:#7f8c8d;">(야후 차트 안정 엔진 구동 중)</span>`;
+            loadingEl.innerHTML = `${ticker} 데이터를 불러오는 중입니다...<br><span style="font-size:14px; color:#7f8c8d;">(야후 차트 안정 엔진 구동 중)</span>`;
             loadingEl.style.color = '#3498db';
 
             const currentUnixTime = Math.floor(Date.now() / 1000); 
-            // period1=0 세팅과 함께 includeAdjustedClose=true를 조합하여 전 기간 누락 없는 오리지널 일봉 데이터 호출
-            const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?period1=0&period2=${currentUnixTime}&interval=1d&includeAdjustedClose=true`;
+            // period1=0 세팅과 함께 interval=1d를 조합하여 전 기간 일봉 데이터 추출
+            const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?period1=0&period2=${currentUnixTime}&interval=1d`;
 
             const proxyList = [
                 `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
@@ -528,11 +533,17 @@
             const buyPoint = parseFloat(document.getElementById('buy-point').value) || 1.5;
             const sellPoint = parseFloat(document.getElementById('sell-point').value) || 3.0;
 
+            if(buyPoint >= sellPoint) {
+                alert("매수 지점은 매도 지점보다 반드시 작아야 합니다.");
+                return;
+            }
+
             let smaData = [], disparityData = [], validDisparities = [], windowPrices = [];
             const N = cachedData.prices.length;
             const maxMulrim = cachedData.maxMulrim;
             const rawMulrimData = cachedData.rawMulrimData;
 
+            // 1. 이평선 및 이격도 계산
             for (let i = 0; i < N; i++) {
                 const currentPrice = cachedData.prices[i];
                 windowPrices.push(currentPrice);
@@ -551,6 +562,7 @@
 
             let avgDisparity = validDisparities.length > 0 ? validDisparities.reduce((a, b) => a + b, 0) / validDisparities.length : 0;
             
+            // 2. 기준선 데이터 생성
             let disparityBaseLineData = [], disparityBuyLineData = [], disparitySellLineData = [];
             let disparityAvgLineData = [], priceAvgDisparityLineData = [];
             let priceBuyLineData = [], priceSellLineData = [];
@@ -571,6 +583,7 @@
                 }
             }
 
+            // 3. 백테스트 (초기 자본 전액 주식 보유 상태 반영)
             let firstValidIdx = disparityData.findIndex(d => d !== null);
             if (firstValidIdx === -1) firstValidIdx = 0; 
 
@@ -620,6 +633,7 @@
             
             const cagr = (Math.pow(finalCapital / initialCap, 1 / totalYears) - 1) * 100;
 
+            // 4. 물림일수 필터링
             let displayMulrimData = new Array(N);
             let safeMulrimData = new Array(N); 
             for (let i = 0; i < N; i++) {
@@ -632,6 +646,7 @@
                 }
             }
 
+            // 5. 회귀분석
             let rSquared = 0, slope = 0, intercept = 0, validX = [], validY = [];
             for (let i = 0; i < N; i++) {
                 if (disparityData[i] !== null && safeMulrimData[i] !== null) {
@@ -673,7 +688,27 @@
                 const latestDate = cachedData.dates[N - 1];
                 const latestPrice = cachedData.prices[N - 1]; 
                 const latestDisparity = validDisparities[validDisparities.length - 1];
-                let riskLevel = maxDisp > minDisp ? ((latestDisparity - minDisp) / (maxDisp - minDisp)) * 100 : 0;
+                
+                // [위험도 평가 업데이트] 이격도 표준편차 및 99% 신뢰구간 (정규분포 2.576σ 기준)
+                let dispStdDev = 0;
+                let dispSqSum = 0;
+                for (let i = 0; i < validDisparities.length; i++) {
+                    dispSqSum += Math.pow(validDisparities[i] - avgDisparity, 2);
+                }
+                dispStdDev = Math.sqrt(dispSqSum / validDisparities.length);
+                
+                const Z_99 = 2.576; // 99% 신뢰구간 
+                const upper99 = avgDisparity + (Z_99 * dispStdDev);
+                const lower99 = avgDisparity - (Z_99 * dispStdDev);
+                
+                let riskLevel = 50; // 기본값 50% (평균치)
+                if (upper99 > lower99) {
+                    // 상단 터치시 100%, 하단 터치시 0%가 되도록 선형 변환
+                    riskLevel = ((latestDisparity - lower99) / (upper99 - lower99)) * 100;
+                    // 구간 외 값(0 미만 또는 100 초과)은 0%와 100%로 고정
+                    riskLevel = Math.max(0, Math.min(100, riskLevel));
+                }
+                
                 let expectedMulrim = Math.max(0, Math.round(slope * latestDisparity + intercept)) || 0;
 
                 simPanel.innerHTML = `<div style="font-size: 16px; color:#7f8c8d; margin-bottom:5px;">📊 시뮬레이션 결과</div>` +
@@ -715,7 +750,7 @@
                         if (!labels) return null;
                         if (Math.floor(val) !== val) return null; 
                         
-                        const label = labels[val];
+                        const label = labels[val]; // 예: '2023-01-05'
                         if (!label || label.length < 10) return null;
                         const visibleTicksCount = ticks.length;
 
@@ -1127,13 +1162,13 @@
                         if (elements.length > 0) {
                             const idx = elements[0].index;
                             const item = results[idx];
-                            window.selectedPointFromChart = { buy: item.buy, sell: item.sell };
+                            window.selectedPointFromChart = { buy: item.buy, sell: item.x };
                             document.getElementById('custom-apply-btn').disabled = false;
                             
                             document.getElementById('trade-opt-result-text').innerHTML = 
                                 `최고 효율 매수: <span style="color:#27ae60;">${bestBuy}x</span> 이하 / 매도: <span style="color:#e74c3c;">${bestSell}x</span> 이상<br>`+
                                 `이때의 예상 최고 자본: <span style="color:#d35400;">${maxFinalCapital.toLocaleString(undefined, {maximumFractionDigits:2})}</span><br><br>`+
-                                `<span style="color:#2980b9; font-size:15px; font-weight:bold;">[선택된 타점] 매수: ${item.buy}x / 매도: ${item.sell}x (최종자본: ${item.v.toLocaleString(undefined, {maximumFractionDigits:2})})</span>`;
+                                `<span style="color:#2980b9; font-size:15px; font-weight:bold;">[선택된 타점] 매수: ${item.buy}x / 매도: ${item.x}x (최종자본: ${item.v.toLocaleString(undefined, {maximumFractionDigits:2})})</span>`;
                         }
                     },
                     plugins: {
