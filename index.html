@@ -496,7 +496,7 @@
 
             let avgDisparity = validDisparities.length > 0 ? validDisparities.reduce((a, b) => a + b, 0) / validDisparities.length : 0;
             
-            // 2. 기준선 데이터 생성 (차트 표출용)
+            // 2. 기준선 데이터 생성
             let disparityBaseLineData = [], disparityBuyLineData = [], disparitySellLineData = [];
             let disparityAvgLineData = [], priceAvgDisparityLineData = [];
             let priceBuyLineData = [], priceSellLineData = [];
@@ -517,7 +517,7 @@
                 }
             }
 
-            // 3. 백테스트 (매매 시뮬레이션: 초기 자본을 모두 주식으로 보유한 상태에서 시작)
+            // 3. 백테스트
             let isHolding = true;
             let cash = 0;
             let shares = initialCap / cachedData.prices[0]; 
@@ -548,7 +548,7 @@
             }
             let finalCapital = capitalHistory[N - 1];
 
-            // 4. 물림일수 표기 필터링
+            // 4. 물림일수
             let displayMulrimData = new Array(N);
             let safeMulrimData = new Array(N); 
             for (let i = 0; i < N; i++) {
@@ -561,7 +561,7 @@
                 }
             }
 
-            // 5. 회귀분석 및 R² 계산
+            // 5. 회귀분석
             let rSquared = 0, slope = 0, intercept = 0, validX = [], validY = [];
             for (let i = 0; i < N; i++) {
                 if (disparityData[i] !== null && safeMulrimData[i] !== null) {
@@ -606,7 +606,7 @@
                 let riskLevel = maxDisp > minDisp ? ((latestDisparity - minDisp) / (maxDisp - minDisp)) * 100 : 0;
                 let expectedMulrim = Math.max(0, Math.round(slope * latestDisparity + intercept)) || 0;
 
-                simPanel.innerHTML = `<div>📊 시뮬레이션 최종 자본</div>` +
+                simPanel.innerHTML = `<div style="font-size: 16px; color:#7f8c8d;">📊 시뮬레이션 최종 자본</div>` +
                                      `<div class="eval-capital" style="margin-top: 5px;">${finalCapital.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</div>` +
                                      `<div style="font-size: 14px; font-weight: normal; color: #7f8c8d;">(초기 자본: ${initialCap.toLocaleString()})</div>`;
                 simPanel.style.display = 'block';
@@ -817,6 +817,11 @@
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false,
+                    // [중요] 단일 점만 선택되도록 Interaction 수정
+                    interaction: {
+                        mode: 'nearest',
+                        intersect: true
+                    },
                     plugins: { tooltip: { callbacks: { label: function(c) { return `이격도: ${c.parsed.x.toFixed(2)}x, 물림: ${c.parsed.y}일`; } } } },
                     scales: { x: { type: 'linear', position: 'bottom', title: { display: true, text: '이격비율' } }, y: { title: { display: true, text: '물림일수' }, beginAtZero: true } }
                 }
@@ -990,14 +995,12 @@
             bestOptimizedBuy = bestBuy;
             bestOptimizedSell = bestSell;
 
-            // 결과를 2D 산점도(히트맵)용 데이터로 변환 (최대자산:빨강, 최소자산:파랑)
             let scatterData = [];
             let scatterColors = [];
             
             for (let item of results) {
                 scatterData.push({ x: item.x, y: item.y });
                 
-                // 최고값일 때 t=0 (빨강), 최저값일 때 t=1 (파랑)
                 let t = (maxFinalCapital === minFinalCapital) ? 0 : (maxFinalCapital - item.v) / (maxFinalCapital - minFinalCapital);
                 let v = t * 4; 
                 let r, g, b;
@@ -1026,6 +1029,12 @@
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false,
+                    // [중요] 단일 점만 선택되도록 Interaction 수정
+                    interaction: {
+                        mode: 'nearest',
+                        intersect: true,
+                        axis: 'xy'
+                    },
                     plugins: {
                         tooltip: {
                             callbacks: {
