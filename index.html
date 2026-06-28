@@ -14,9 +14,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Stock Analytics">
 
-    <!-- Chart.js 로드 (2D 차트용) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Plotly.js 로드 (3D 차트용) -->
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 
     <style>
@@ -210,7 +208,6 @@
 
     <div id="loading">데이터를 불러오는 중입니다...</div>
 
-    <!-- 1. 이격도 기준일수 최적화 모달창 -->
     <div id="optimizer-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 style="font-size: 18px; margin-top: 0;">📈 기준일수 최적화 분석기 (R² 기반)</h2>
@@ -225,11 +222,9 @@
         </div>
     </div>
 
-    <!-- 2. 매수/매도 3D 최적화 모달창 -->
     <div id="trade-optimizer-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 style="font-size: 18px; margin-top: 0; color:#d35400;">📊 매수/매도 타점 3D 최적화</h2>
-            <!-- Plotly 3D 차트가 들어갈 렌더링 영역 -->
             <div id="tradeOptimizerChart" class="opt-chart-container" style="height: 400px;"></div>
             <p id="trade-opt-result-text" style="font-size:16px; font-weight:bold; margin:15px 0;">모든 매수/매도 조합을 시뮬레이션 중입니다...</p>
             <div class="modal-actions">
@@ -239,7 +234,6 @@
         </div>
     </div>
 
-    <!-- 3. 시간흐름 비교 모달창 -->
     <div id="timeseries-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 style="font-size: 18px; margin-top: 0; color:#2c3e50;">📅 날짜별 이격도 & 물림일수 추이</h2>
@@ -252,7 +246,6 @@
         </div>
     </div>
 
-    <!-- 4. 산점도 모달창 -->
     <div id="scatter-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 style="font-size: 18px; margin-top: 0; color:#2c3e50;">📈 상관관계 산점도 및 추세선</h2>
@@ -282,7 +275,7 @@
             <label>종목 <input type="text" id="ticker-input" value="TQQQ"></label>
             <label>이평 기준일수 <input type="number" id="ma-period" value="1500" min="1"></label>
             
-            <div style="width: 100%; height: 0;"></div> <!-- 줄바꿈 -->
+            <div style="width: 100%; height: 0;"></div> 
             
             <label>초기 자본 <input type="number" id="initial-cap" value="10000" min="1"></label>
             <label style="color:#27ae60;">매수(이하) <input type="number" id="buy-point" step="0.05" value="0.8"></label>
@@ -486,53 +479,55 @@
 
             let avgDisparity = validDisparities.length > 0 ? validDisparities.reduce((a, b) => a + b, 0) / validDisparities.length : 0;
             
-            // 2. 매수/매도 기준선 (차트 표출용)
+            // 2. 기준선 데이터 생성 (차트 표출용)
             let disparityBaseLineData = [], disparityBuyLineData = [], disparitySellLineData = [];
+            let disparityAvgLineData = [], priceAvgDisparityLineData = [];
             let priceBuyLineData = [], priceSellLineData = [];
 
             for (let i = 0; i < N; i++) {
                 if (disparityData[i] !== null) {
                     disparityBaseLineData.push(1.0); 
+                    disparityAvgLineData.push(avgDisparity);
                     disparityBuyLineData.push(buyPoint);
                     disparitySellLineData.push(sellPoint);
+                    priceAvgDisparityLineData.push(smaData[i] * avgDisparity);
                     priceBuyLineData.push(smaData[i] * buyPoint); 
                     priceSellLineData.push(smaData[i] * sellPoint); 
                 } else {
-                    disparityBaseLineData.push(null); disparityBuyLineData.push(null); disparitySellLineData.push(null);
-                    priceBuyLineData.push(null); priceSellLineData.push(null);
+                    disparityBaseLineData.push(null); disparityAvgLineData.push(null); 
+                    disparityBuyLineData.push(null); disparitySellLineData.push(null);
+                    priceAvgDisparityLineData.push(null); priceBuyLineData.push(null); priceSellLineData.push(null);
                 }
             }
 
-            // 3. 백테스트 (매매 시뮬레이션)
-            let isHolding = false;
-            let shares = 0;
-            let cash = initialCap;
+            // 3. 백테스트 (매매 시뮬레이션: 초기 자본을 모두 주식으로 보유한 상태에서 시작)
+            let isHolding = true;
+            let cash = 0;
+            let shares = initialCap / cachedData.prices[0]; // 데이터 첫날 가격으로 전액 매수했다고 가정
+            
             let tradeActions = new Array(N).fill("-");
             let capitalHistory = new Array(N).fill(null);
+
+            tradeActions[0] = "초기 보유 시작";
 
             for (let i = 0; i < N; i++) {
                 let d = disparityData[i];
                 let p = cachedData.prices[i];
                 
                 if (d !== null) {
-                    if (!isHolding && d < buyPoint && cash > 0) {
-                        // 전액 매수
-                        shares = cash / p;
-                        cash = 0;
-                        isHolding = true;
-                        tradeActions[i] = "매수 (Buy)";
-                    } else if (isHolding && d > sellPoint && shares > 0) {
-                        // 전액 매도
+                    if (isHolding && d > sellPoint && shares > 0) {
                         cash = shares * p;
                         shares = 0;
                         isHolding = false;
                         tradeActions[i] = "매도 (Sell)";
+                    } else if (!isHolding && d < buyPoint && cash > 0) {
+                        shares = cash / p;
+                        cash = 0;
+                        isHolding = true;
+                        tradeActions[i] = "매수 (Buy)";
                     }
                 }
-                
-                // 매일 총 자산 기록
-                let currentAsset = cash + (shares * p);
-                capitalHistory[i] = currentAsset;
+                capitalHistory[i] = cash + (shares * p);
             }
             let finalCapital = capitalHistory[N - 1];
 
@@ -575,8 +570,8 @@
 
             let maxDisp = 5, minDisp = 0;
             if (validDisparities.length > 0) {
-                maxDisp = Math.max(...validDisparities, 1.0, sellPoint);
-                minDisp = Math.min(...validDisparities, 1.0, buyPoint);
+                maxDisp = Math.max(...validDisparities, 1.0, sellPoint, avgDisparity);
+                minDisp = Math.min(...validDisparities, 1.0, buyPoint, avgDisparity);
             }
 
             window.currentAnalysis = {
@@ -602,7 +597,7 @@
                                       `</div>` +
                                       `<div style="margin: 10px 0; background:#fff; padding:10px; border-radius:8px; border:1px dashed #ced4da;">` +
                                       `시뮬레이션 최종 자본: <span class="eval-capital">${finalCapital.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</span> ` +
-                                      `<span style="font-size:13px; color:#7f8c8d;">(초기: ${initialCap.toLocaleString()})</span>` +
+                                      `<span style="font-size:13px; color:#7f8c8d;">(초기자본: ${initialCap.toLocaleString()})</span>` +
                                       `</div>` +
                                       `예상 물림일수(회귀기반): 약 ${expectedMulrim}일 <span style="font-size:12px; color:#7f8c8d;">(R²: ${rSquared.toFixed(3)})</span>`;
                 evalPanel.style.display = 'block';
@@ -611,8 +606,8 @@
                 evalPanel.style.display = 'block';
             }
 
-            renderPriceChart(cachedData.dates, cachedData.prices, smaData, priceBuyLineData, priceSellLineData, period);
-            renderDisparityChart(cachedData.dates, disparityData, disparityBaseLineData, disparityBuyLineData, disparitySellLineData, maxDisp, minDisp, period);
+            renderPriceChart(cachedData.dates, cachedData.prices, smaData, priceAvgDisparityLineData, priceBuyLineData, priceSellLineData, avgDisparity, period);
+            renderDisparityChart(cachedData.dates, disparityData, disparityBaseLineData, disparityAvgLineData, disparityBuyLineData, disparitySellLineData, avgDisparity, maxDisp, minDisp, period);
             populateTable(cachedData.dates, cachedData.prices, displayMulrimData, smaData, disparityData, tradeActions, capitalHistory, period);
         }
 
@@ -636,7 +631,7 @@
             };
         }
 
-        function renderPriceChart(labels, priceData, smaData, priceBuyLineData, priceSellLineData, period) {
+        function renderPriceChart(labels, priceData, smaData, priceAvgLineData, priceBuyLineData, priceSellLineData, avgDisparity, period) {
             const ctx = document.getElementById('priceChart').getContext('2d');
             if (window.priceChartInstance) window.priceChartInstance.destroy();
             window.priceChartInstance = new Chart(ctx, {
@@ -645,9 +640,10 @@
                     labels: labels,
                     datasets: [
                         { label: `${cachedCompanyName} 수정종가`, data: priceData, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, order: 1 },
-                        { label: `${period}일 이평선`, data: smaData, borderColor: '#f1c40f', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 2 },
-                        { label: `매도 타점 가격`, data: priceSellLineData, borderColor: '#e74c3c', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 3 },
-                        { label: `매수 타점 가격`, data: priceBuyLineData, borderColor: '#27ae60', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 4 }
+                        { label: `평균 이격 위치 (${avgDisparity.toFixed(2)}x)`, data: priceAvgLineData, borderColor: '#000000', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 2 },
+                        { label: `${period}일 이동평균선`, data: smaData, borderColor: '#f1c40f', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 3 },
+                        { label: `매도 타점 가격`, data: priceSellLineData, borderColor: '#e74c3c', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 4 },
+                        { label: `매수 타점 가격`, data: priceBuyLineData, borderColor: '#27ae60', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 5 }
                     ]
                 },
                 options: { 
@@ -660,7 +656,7 @@
             });
         }
 
-        function renderDisparityChart(labels, disparityData, baseLineData, buyLineData, sellLineData, maxDisp, minDisp, period) {
+        function renderDisparityChart(labels, disparityData, baseLineData, avgLineData, buyLineData, sellLineData, avgDisparity, maxDisp, minDisp, period) {
             const ctx = document.getElementById('disparityChart').getContext('2d');
             if (window.disparityChartInstance) window.disparityChartInstance.destroy();
             window.disparityChartInstance = new Chart(ctx, {
@@ -669,9 +665,10 @@
                     labels: labels,
                     datasets: [ 
                         { label: `${period}일 이격 비율`, data: disparityData, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, fill: true, order: 1 },
-                        { label: `이평선 (1.0x)`, data: baseLineData, borderColor: '#f1c40f', borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true, order: 2 },
-                        { label: `매도선`, data: sellLineData, borderColor: '#e74c3c', borderWidth: 2, borderDash: [5,5], pointRadius: 0, tension: 0, spanGaps: true, order: 3 },
-                        { label: `매수선`, data: buyLineData, borderColor: '#27ae60', borderWidth: 2, borderDash: [5,5], pointRadius: 0, tension: 0, spanGaps: true, order: 4 }
+                        { label: `평균 이격도 (${avgDisparity.toFixed(2)}x)`, data: avgLineData, borderColor: '#000000', borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true, order: 2 },
+                        { label: `이평선 (1.0x)`, data: baseLineData, borderColor: '#f1c40f', borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true, order: 3 },
+                        { label: `매도선`, data: sellLineData, borderColor: '#e74c3c', borderWidth: 2, borderDash: [5,5], pointRadius: 0, tension: 0, spanGaps: true, order: 4 },
+                        { label: `매수선`, data: buyLineData, borderColor: '#27ae60', borderWidth: 2, borderDash: [5,5], pointRadius: 0, tension: 0, spanGaps: true, order: 5 }
                     ]
                 },
                 options: { 
@@ -804,7 +801,7 @@
             });
         }
 
-        // --- 최적화 로직 공통 ---
+        // --- 최적화 로직 ---
         function getFastR2ForPeriod(period) {
             const N = cachedData.prices.length;
             let validX = [], validY = [], sum = 0;
@@ -883,7 +880,6 @@
         }
 
         function runTradeOptimization() {
-            // 빠른 연산을 위해 현재 period로 이격도 배열만 추출
             const period = parseInt(document.getElementById('ma-period').value) || 1500;
             const initCap = parseFloat(document.getElementById('initial-cap').value) || 10000;
             const N = cachedData.prices.length;
@@ -914,22 +910,20 @@
                 return alert("데이터가 너무 적어 최적화할 수 없습니다.");
             }
 
-            // 그리드 생성 (매수/매도 타점 탐색 범위 설정)
-            let step = 0.02; // 세밀한 최적화를 위해 0.02 배수 단위로 탐색
+            let step = 0.02; 
             let startD = Math.floor(minD * 100) / 100;
             let endD = Math.ceil(maxD * 100) / 100;
 
-            let xLabels = []; // Buy Points
-            let yLabels = []; // Sell Points
+            let xLabels = []; 
+            let yLabels = []; 
             
             for (let b = startD; b <= endD - step; b += step) xLabels.push(parseFloat(b.toFixed(2)));
             for (let s = startD + step; s <= endD; s += step) yLabels.push(parseFloat(s.toFixed(2)));
 
-            let zData = []; // 자본 결과 Matrix
+            let zData = []; 
             let maxFinalCapital = -1;
             let bestBuy = 0, bestSell = 0;
 
-            // 시뮬레이터 핵심 엔진
             for (let i = 0; i < yLabels.length; i++) {
                 let sellPt = yLabels[i];
                 let zRow = [];
@@ -937,28 +931,28 @@
                     let buyPt = xLabels[j];
                     
                     if (buyPt >= sellPt) {
-                        zRow.push(null); // 매수 >= 매도인 경우 계산하지 않음 (3D 그래프 빈 공간)
+                        zRow.push(null); 
                         continue;
                     }
 
-                    // 해당 조건(buyPt, sellPt)으로 시뮬레이션
-                    let cash = initCap;
-                    let shares = 0;
-                    let isHolding = false;
+                    // 초기 자본 전액 매수 상태로 시작
+                    let cash = 0;
+                    let shares = initCap / cachedData.prices[0];
+                    let isHolding = true;
                     
                     for (let k = 0; k < N; k++) {
                         let d = disparities[k];
                         if (d === null) continue;
                         
                         let p = cachedData.prices[k];
-                        if (!isHolding && d < buyPt && cash > 0) {
-                            shares = cash / p;
-                            cash = 0;
-                            isHolding = true;
-                        } else if (isHolding && d > sellPt && shares > 0) {
+                        if (isHolding && d > sellPt && shares > 0) {
                             cash = shares * p;
                             shares = 0;
                             isHolding = false;
+                        } else if (!isHolding && d < buyPt && cash > 0) {
+                            shares = cash / p;
+                            cash = 0;
+                            isHolding = true;
                         }
                     }
                     
@@ -977,7 +971,6 @@
             bestOptimizedBuy = bestBuy;
             bestOptimizedSell = bestSell;
 
-            // Plotly 3D Surface 그래프 렌더링
             var data = [{
                 z: zData,
                 x: xLabels,
