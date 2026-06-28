@@ -30,8 +30,12 @@
             overflow-x: hidden;
         }
         
-        /* 모바일 터치 이벤트 충돌 방지 핵심 코드 */
+        /* [핵심 수정] 터치 스크롤 먹통 현상 해결 */
         canvas {
+            touch-action: pan-y !important; /* 위아래 스크롤 허용, 좌우는 차트 이동 */
+        }
+        /* 모달 안의 산점도 차트는 화면 가득 차므로 전체 터치 제어 허용 */
+        #scatterChart, #tradeOptimizerChart {
             touch-action: none !important; 
         }
 
@@ -198,7 +202,7 @@
         .modal-overlay {
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.85); /* 모달 열릴 때 배경을 약간 더 어둡게 */
+            background: rgba(0,0,0,0.85);
             display: none;
             align-items: center;
             justify-content: center;
@@ -290,7 +294,7 @@
     <div class="widget-container">
         <div class="header">
             <h1 id="main-title">Custom Analytics & Simulator</h1>
-            <p>매수, 매도 이격도 지점을 설정하여 최적의 수익률을 시뮬레이션 해보세요.</p>
+            <p>매수, 매도 이격도 지점을 설정하여 최적의 수익률을 시뮬레이션 해보세요.<br><span style="font-size:12px; color:#95a5a6;">(PC: Ctrl+휠 확대 / 모바일: 두 손가락 확대)</span></p>
         </div>
 
         <div class="control-panel">
@@ -386,13 +390,11 @@
         // --- 공통 모달 및 Zoom 제어 로직 ---
         function openModal(modalId) {
             document.getElementById(modalId).style.display = 'flex';
-            // 모달 열릴 때 백그라운드 스크롤 방지 (중요!)
             document.body.style.overflow = 'hidden';
         }
 
         function closeModal(modalId) {
             document.getElementById(modalId).style.display = 'none';
-            // 모달 닫힐 때 백그라운드 스크롤 복구
             document.body.style.overflow = 'auto';
         }
 
@@ -407,15 +409,24 @@
             resetChartZoom(disparityChartInstance);
         }
 
-        // --- 플러그인 Zoom 옵션 (정확한 객체 구조화) ---
+        // [핵심 수정] Zoom 플러그인 설정 개선
+        // PC 마우스 휠 스크롤 충돌 방지를 위해 modifierKey(Ctrl)를 추가했습니다.
         const zoomPluginX = {
             pan: { enabled: true, mode: 'x' },
-            zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
+            zoom: { 
+                wheel: { enabled: true, modifierKey: 'ctrl' }, // Ctrl + 휠로만 줌 작동
+                pinch: { enabled: true }, 
+                mode: 'x' 
+            }
         };
 
         const zoomPluginXY = {
             pan: { enabled: true, mode: 'xy' },
-            zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }
+            zoom: { 
+                wheel: { enabled: true, modifierKey: 'ctrl' }, 
+                pinch: { enabled: true }, 
+                mode: 'xy' 
+            }
         };
 
         async function handleRenderClick() {
@@ -600,7 +611,7 @@
             }
             let finalCapital = capitalHistory[N - 1];
 
-            // 4. 물림일수
+            // 4. 물림일수 필터링
             let displayMulrimData = new Array(N);
             let safeMulrimData = new Array(N); 
             for (let i = 0; i < N; i++) {
@@ -684,7 +695,6 @@
             populateTable(cachedData.dates, cachedData.prices, displayMulrimData, smaData, disparityData, tradeActions, capitalHistory, period);
         }
 
-        // --- 차트 렌더링 로직 (Chart.js) ---
         function getYearlyTicksConfig() {
             return {
                 autoSkip: false, maxRotation: 0,
@@ -756,7 +766,6 @@
             });
         }
 
-        // --- 표 생성 및 CSV ---
         function populateTable(dates, prices, displayMulrimData, smaData, disparityData, tradeActions, capitalHistory, period) {
             const tableBody = document.getElementById('table-body');
             let htmlContent = '';
@@ -803,7 +812,6 @@
             URL.revokeObjectURL(url);
         }
 
-        // [시계열 모달]
         function openTimeseriesModal() {
             if (!window.currentAnalysis) return alert('먼저 데이터를 계산해주세요.');
             openModal('timeseries-modal');
@@ -830,7 +838,6 @@
             });
         }
 
-        // [산점도 모달]
         function openScatterModal() {
             if (!window.currentAnalysis) return alert('먼저 데이터를 계산해주세요.');
             openModal('scatter-modal');
@@ -948,7 +955,7 @@
             calculateAndRender();
         }
 
-        // 2. 매수/매도 타점 최적화
+        // 2. 매수/매도 타점 최적화 (2D 히트맵 방식 산점도)
         function openTradeOptimizer() {
             if (!cachedData) return alert('먼저 데이터를 불러와주세요.');
             openModal('trade-optimizer-modal');
