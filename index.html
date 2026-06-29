@@ -303,13 +303,41 @@
     <!-- 5. 분할매매 최적화 모달창 -->
     <div id="split-trade-modal" class="modal-overlay">
         <div class="modal-content">
-            <h2 style="font-size: 18px; margin-top: 0; color:#8e44ad;">📉 분할매매(이차함수) 최적화 보기</h2>
-            <div class="opt-chart-container">
-                <canvas id="splitTradeChart"></canvas>
+            <h2 style="font-size: 18px; margin-top: 0; color:#8e44ad;">📉 분할매매 완전탐색 최적화 보기</h2>
+            
+            <div id="split-setup-panel" style="background:#f1f2f6; padding:15px; border-radius:8px; margin-bottom:15px; text-align:left; font-size:14px;">
+                <div style="margin-bottom:10px;">
+                    <strong>탐색 해상도 모드:</strong>
+                    <select id="split-mode-select" style="padding:4px; border-radius:4px; border:1px solid #ced4da; margin-left:10px; font-family:inherit;">
+                        <option value="50_0.2">50구간 & 0.2갭 (약 316만 조합, 3~10초)</option>
+                        <option value="16_0.1">16구간 & 0.1갭 (약 326만 조합, 3~10초)</option>
+                        <option value="9_0.05">9구간 & 0.05갭 (약 310만 조합, 3~10초)</option>
+                    </select>
+                </div>
+                <div style="display:flex; gap:15px; flex-wrap:wrap; align-items:center;">
+                    <div>
+                        <strong>시작 점 이격도 (100% 매수):</strong>
+                        <input type="number" id="split-start-d" step="0.01" style="width:70px; padding:4px; margin-left:5px; border:1px solid #ced4da; border-radius:4px;">
+                    </div>
+                    <div>
+                        <strong>끝 점 이격도 (0% 매수):</strong>
+                        <input type="number" id="split-end-d" step="0.01" style="width:70px; padding:4px; margin-left:5px; border:1px solid #ced4da; border-radius:4px;">
+                    </div>
+                </div>
+                <div style="text-align:center; margin-top:15px;">
+                    <button class="btn btn-split" style="font-weight:bold;" onclick="startSplitTradeCalculation()">🚀 선택한 조건으로 연산 시작</button>
+                </div>
             </div>
-            <p id="split-trade-result-text" style="font-size:16px; font-weight:bold; margin:15px 0;">-10000부터 10000까지 c를 대입하며 시뮬레이션을 진행 중입니다...</p>
+
+            <div id="split-result-panel" style="display:none;">
+                <div class="opt-chart-container">
+                    <canvas id="splitTradeChart"></canvas>
+                </div>
+                <p id="split-trade-result-text" style="font-size:16px; font-weight:bold; margin:15px 0;">연산 중입니다...</p>
+            </div>
+
             <div class="modal-actions">
-                <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(splitTradeChartInstance)">🔍 줌 초기화</button>
+                <button id="split-reset-zoom-btn" class="btn btn-reset" style="display:none; margin:0;" onclick="resetChartZoom(splitTradeChartInstance)">🔍 줌 초기화</button>
                 <button class="btn" style="margin:0;" onclick="closeModal('split-trade-modal')">닫기</button>
             </div>
         </div>
