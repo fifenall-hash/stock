@@ -658,6 +658,8 @@
             if (totalYears <= 0) totalYears = 0.001; 
             
             const cagr = (Math.pow(finalCapital / initialCap, 1 / totalYears) - 1) * 100;
+            
+            const tradingDays = N - firstValidIdx; // 실수행 기간 동안의 개장일 수 계산 추가
 
             // 4. 물림일수 필터링
             let displayMulrimData = new Array(N);
@@ -739,7 +741,7 @@
 
                 simPanel.innerHTML = `<div style="font-size: 16px; color:#7f8c8d; margin-bottom:5px;">📊 시뮬레이션 결과</div>` +
                                      `<div style="font-size: 14px; font-weight: normal; color: #555;">실수행 기간: ${startDateStr} ~ ${endDateStr}</div>` +
-                                     `<div style="font-size: 14px; font-weight: normal; color: #555; margin-bottom:8px;">(<span style="color:#2c3e50; font-weight:bold;">${totalYears.toFixed(2)}년</span> / ${totalDays}일)</div>` +
+                                     `<div style="font-size: 14px; font-weight: normal; color: #555; margin-bottom:8px;">(<span style="color:#2c3e50; font-weight:bold;">${totalYears.toFixed(2)}년</span> / ${totalDays}일 [개장: ${tradingDays}일])</div>` +
                                      `<div class="eval-capital">${finalCapital.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</div>` +
                                      `<div style="font-size: 14px; font-weight: normal; color: #7f8c8d; margin-top:5px;">초기 자본: ${initialCap.toLocaleString()} <span style="margin: 0 5px;">|</span> CAGR: <span style="color:#e74c3c; font-weight:bold;">${cagr.toFixed(2)}%</span></div>`;
                 simPanel.style.display = 'block';
