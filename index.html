@@ -307,7 +307,7 @@
             <div class="opt-chart-container">
                 <canvas id="splitTradeChart"></canvas>
             </div>
-            <p id="split-trade-result-text" style="font-size:16px; font-weight:bold; margin:15px 0;">0부터 100까지 c를 대입하며 시뮬레이션을 진행 중입니다...</p>
+            <p id="split-trade-result-text" style="font-size:16px; font-weight:bold; margin:15px 0;">-10000부터 10000까지 c를 대입하며 시뮬레이션을 진행 중입니다...</p>
             <div class="modal-actions">
                 <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(splitTradeChartInstance)">🔍 줌 초기화</button>
                 <button class="btn" style="margin:0;" onclick="closeModal('split-trade-modal')">닫기</button>
@@ -1244,8 +1244,10 @@
         function openSplitTradeOptimizer() {
             if (!cachedData) return alert('먼저 데이터를 불러와주세요.');
             openModal('split-trade-modal');
-            document.getElementById('split-trade-result-text').innerText = '0부터 100까지 c를 대입하며 시뮬레이션을 진행 중입니다...';
+            document.getElementById('split-trade-result-text').innerText = '-10000부터 10000까지 c를 대입하며 시뮬레이션을 진행 중입니다...';
             if (splitTradeChartInstance) splitTradeChartInstance.destroy();
+            
+            // UI 업데이트(로딩 메시지 표출)를 위해 약간의 지연 후 무거운 루프 실행
             setTimeout(() => { runSplitTradeOptimization(); }, 100);
         }
 
@@ -1296,8 +1298,8 @@
             let x2 = maxD;
             let D = x1 * x2 * (x1 - x2);
 
-            // c값 0~100 순회하며 각 2차함수 생성 및 백테스트 진행
-            for (let c = 0; c <= 100; c++) {
+            // c값 -10000~10000 순회하며 각 2차함수 생성 및 백테스트 진행
+            for (let c = -10000; c <= 10000; c++) {
                 let a = (x2 - c * x2 + c * x1) / D;
                 let b = (-c * x1 * x1 - x2 * x2 + c * x2 * x2) / D;
 
