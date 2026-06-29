@@ -1246,7 +1246,7 @@
         function openSplitTradeOptimizer() {
             if (!cachedData) return alert('먼저 데이터를 불러와주세요.');
             openModal('split-trade-modal');
-            document.getElementById('split-trade-result-text').innerText = '-10000부터 10000까지 c를 대입하며 시뮬레이션을 진행 중입니다...';
+            document.getElementById('split-trade-result-text').innerText = '단조감소 조건을 만족하는 수만 가지의 자유곡선 조합을 딥서치 중입니다...';
             if (splitTradeChartInstance) splitTradeChartInstance.destroy();
             
             // UI 업데이트(로딩 메시지 표출)를 위해 약간의 지연 후 무거운 루프 실행
@@ -1292,19 +1292,16 @@
                 return alert("이격도 변화가 없어 분할매매 최적화가 불가능합니다.");
             }
 
-            let bestFinalCap = -1;
-            let bestA = 0, bestB = 0, bestC = 0;
-            
-            // 경계값 활용 (최저 이격도 x1일때 비율 1, 최고 이격도 x2일때 비율 0)
-            let x1 = minD;
-            let x2 = maxD;
-            let D = x1 * x2 * (x1 - x2);
+            // x축 버킷 설정 (20등분 - 점 21개)
+            const N_BUCKETS = 20;
+            let Y = new Array(N_BUCKETS + 1);
+            // 초기값 세팅: 1.0부터 0.0까지 균등 감소 (0.01 단위)
+            for(let i=0; i<=N_BUCKETS; i++) {
+                Y[i] = Math.round((1.0 - i/N_BUCKETS)*100)/100;
+            }
 
-            // c값 -10000~10000 순회하며 각 2차함수 생성 및 백테스트 진행
-            for (let c = -10000; c <= 10000; c++) {
-                let a = (x2 - c * x2 + c * x1) / D;
-                let b = (-c * x1 * x1 - x2 * x2 + c * x2 * x2) / D;
-
+            // [핵심] 주어진 Y 배열에 대한 백테스트 엔진
+            function evalCurve(testY) {
                 let cash = 0;
                 let shares = initCap / cachedData.prices[firstValidIdx]; 
 
@@ -1312,48 +1309,84 @@
                     let d = disparities[i];
                     if (d === null) continue;
                     let p = cachedData.prices[i];
-
-                    let currentAsset = cash + shares * p;
                     
-                    // 수식에 의한 타겟 주식비율 산출 및 범위(0~1) 제한
-                    let targetRatio = a * d * d + b * d + c;
+                    let targetRatio = 0;
+                    if (d <= minD) targetRatio = 1.0;
+                    else if (d >= maxD) targetRatio = 0.0;
+                    else {
+                        // 선형 보간을 통해 사이값의 목표 주식비율 산출
+                        let idx = Math.floor((d - minD) / (maxD - minD) * N_BUCKETS);
+                        if(idx >= N_BUCKETS) idx = N_BUCKETS - 1;
+                        let x0 = minD + (maxD - minD) * idx / N_BUCKETS;
+                        let x1 = minD + (maxD - minD) * (idx + 1) / N_BUCKETS;
+                        let y0 = testY[idx];
+                        let y1 = testY[idx+1];
+                        let t = (d - x0) / (x1 - x0);
+                        targetRatio = y0 + t * (y1 - y0);
+                        
+                        // 요구사항: 모든 f(x)의 반환값은 0.01 단위로 강제
+                        targetRatio = Math.round(targetRatio * 100) / 100;
+                    }
                     targetRatio = Math.max(0, Math.min(1, targetRatio));
 
+                    let currentAsset = cash + shares * p;
                     let targetStockValue = currentAsset * targetRatio;
                     let currentStockValue = shares * p;
                     let diff = targetStockValue - currentStockValue;
 
                     if (diff > 0) { 
-                        // 부족하면 추가 매수
                         let buyAmount = Math.min(cash, diff); 
                         shares += buyAmount / p;
                         cash -= buyAmount;
                     } else if (diff < 0) { 
-                        // 초과하면 매도
                         let sellShares = Math.min(shares, -diff / p);
                         shares -= sellShares;
                         cash += sellShares * p;
                     }
                 }
+                return cash + shares * cachedData.prices[N - 1];
+            }
 
-                let finalCap = cash + shares * cachedData.prices[N - 1];
-                if (finalCap > bestFinalCap) {
-                    bestFinalCap = finalCap;
-                    bestA = a;
-                    bestB = b;
-                    bestC = c;
+            let bestFinalCap = evalCurve(Y);
+            let bestY = [...Y];
+
+            // [휴리스틱 최적화] 무작위 돌연변이를 통한 언덕 오르기 탐색 (10,000회 조합 검토)
+            const MAX_ITER = 10000;
+            for(let iter=0; iter < MAX_ITER; iter++) {
+                let testY = [...bestY];
+                let numMutations = Math.floor(Math.random() * 3) + 1; // 1~3개의 포인트 변형
+                
+                for(let m=0; m < numMutations; m++) {
+                    let idx = Math.floor(Math.random() * (N_BUCKETS - 1)) + 1; // 양 끝단(0, 1) 제외한 내부점 조작
+                    let dir = Math.random() < 0.5 ? 0.01 : -0.01;
+                    let steps = Math.floor(Math.random() * 5) + 1; // 최대 5칸(0.05) 변동
+                    
+                    for(let s=0; s < steps; s++) {
+                        if(dir > 0 && testY[idx] + 0.01 <= testY[idx-1]) testY[idx] += 0.01;
+                        if(dir < 0 && testY[idx] - 0.01 >= testY[idx+1]) testY[idx] -= 0.01;
+                        testY[idx] = Math.round(testY[idx]*100)/100;
+                    }
+                }
+                
+                // 단사(단조감소) 조건 방어 코드: 왼쪽보다 크면 깎아내림
+                for(let j=1; j<=N_BUCKETS; j++) {
+                    if (testY[j] > testY[j-1]) testY[j] = testY[j-1];
+                }
+
+                let cap = evalCurve(testY);
+                if (cap > bestFinalCap) {
+                    bestFinalCap = cap;
+                    bestY = [...testY];
                 }
             }
 
-            // 최적화된 2차함수 곡선 데이터 생성
+            // 최적화된 곡선 데이터 차트 렌더링용 조립
             let curveX = [];
             let curveY = [];
-            let step = (maxD - minD) / 100;
-            for (let x = minD; x <= maxD; x += step) {
+            for (let i = 0; i <= N_BUCKETS; i++) {
+                let x = minD + (maxD - minD) * i / N_BUCKETS;
                 curveX.push(x.toFixed(3));
-                let y = bestA * x * x + bestB * x + bestC;
-                y = Math.max(0, Math.min(1, y)); // 0~100% 범위
-                curveY.push((y * 100).toFixed(2)); 
+                curveY.push((bestY[i] * 100).toFixed(0)); // Y축 비율 표기를 위해 100 곱함
             }
 
             const ctx = document.getElementById('splitTradeChart').getContext('2d');
@@ -1369,13 +1402,24 @@
                         borderColor: '#8e44ad',
                         backgroundColor: 'rgba(142, 68, 173, 0.1)',
                         borderWidth: 3,
-                        pointRadius: 0,
-                        fill: true
+                        pointRadius: 4, // 모든 점들을 나타냄
+                        pointBackgroundColor: '#8e44ad',
+                        fill: true,
+                        stepped: false  // 점들을 선으로 부드럽게 이음
                     }]
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false,
-                    plugins: { zoom: zoomPluginX },
+                    plugins: { 
+                        zoom: zoomPluginX,
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `목표 주식 비율: ${context.parsed.y}%`;
+                                }
+                            }
+                        }
+                    },
                     scales: {
                         x: { 
                             title: { display: true, text: '이격도 (x)' },
@@ -1389,9 +1433,9 @@
                 }
             });
 
+            // 수식을 없애고 깔끔하게 결과 출력
             document.getElementById('split-trade-result-text').innerHTML =
-                `<span style="color:#2c3e50; font-size: 15px;">수식: y = ${bestA.toFixed(4)}x² + ${bestB.toFixed(4)}x + ${bestC}</span><br>` +
-                `최적화된 c값: <span style="color:#e74c3c;">${bestC}</span> <br>` +
+                `<span style="color:#2c3e50; font-size: 15px;">가장 효율적인 분할매매 비중 곡선이 탐색되었습니다.</span><br><br>` +
                 `예상 최종 자산: <span style="color:#d35400; font-size:24px;">${bestFinalCap.toLocaleString(undefined, {maximumFractionDigits:2})}</span>`;
         }
 
