@@ -34,7 +34,7 @@
         canvas {
             touch-action: pan-y !important; /* 위아래 스크롤 허용, 좌우는 차트 이동 */
         }
-        #scatterChart, #tradeOptimizerChart {
+        #scatterChart, #tradeOptimizerChart, #splitTradeChart {
             touch-action: none !important; 
         }
 
@@ -255,7 +255,7 @@
         </div>
     </div>
 
-    <!-- 2. 매수/매도 최적화 모달창 -->
+    <!-- 2. 매수/매도 최적화 모달창 (2D 색상 히트맵 방식) -->
     <div id="trade-optimizer-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 style="font-size: 18px; margin-top: 0; color:#d35400;">📊 매수/매도 타점 최적화</h2>
@@ -300,6 +300,21 @@
         </div>
     </div>
 
+    <!-- 5. 분할매매 최적화 모달창 -->
+    <div id="split-trade-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 style="font-size: 18px; margin-top: 0; color:#8e44ad;">📉 분할매매(이차함수) 최적화 보기</h2>
+            <div class="opt-chart-container">
+                <canvas id="splitTradeChart"></canvas>
+            </div>
+            <p id="split-trade-result-text" style="font-size:16px; font-weight:bold; margin:15px 0;">0부터 100까지 c를 대입하며 시뮬레이션을 진행 중입니다...</p>
+            <div class="modal-actions">
+                <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(splitTradeChartInstance)">🔍 줌 초기화</button>
+                <button class="btn" style="margin:0;" onclick="closeModal('split-trade-modal')">닫기</button>
+            </div>
+        </div>
+    </div>
+
     <div class="widget-container">
         <div class="header">
             <h1 id="main-title">Custom Analytics & Simulator</h1>
@@ -329,6 +344,7 @@
             <div class="btn-group" style="margin-top: 5px;">
                 <button class="btn btn-trade-opt" onclick="openTradeOptimizer()">📊 매수/매도 최적화</button>
                 <button class="btn btn-optimize" onclick="openOptimizer()">💡 기준일수 최적화 (R²)</button>
+                <button class="btn" style="background-color:#8e44ad; color:white;" onclick="openSplitTradeOptimizer()">📉 분할매매 최적화 보기</button>
             </div>
             <div class="btn-group" style="margin-top: 5px;">
                 <button class="btn btn-info" onclick="openTimeseriesModal()">📅 이격도 vs 물림일수</button>
@@ -372,6 +388,14 @@
     </div>
 
     <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js').catch(err => {
+                    console.log('Service Worker registration failed: ', err);
+                });
+            });
+        }
+
         let cachedTicker = '';
         let cachedCompanyName = 'TQQQ';
         let cachedData = null;
@@ -382,6 +406,7 @@
         let tradeOptChartInstance = null;
         let timeseriesChartInstance = null;
         let scatterChartInstance = null;
+        let splitTradeChartInstance = null;
         
         let bestOptimizedPeriod = 1500;
         let bestOptimizedBuy = 1.5;
@@ -442,15 +467,16 @@
             }
         }
 
-        // 안정적인 v8 JSON API 기반에 일봉 촘촘함 강제 고정 옵션 연동
         async function fetchNewData(ticker) {
             const loadingEl = document.getElementById('loading');
             loadingEl.style.display = 'block';
-            loadingEl.innerHTML = `${ticker} 데이터를 불러오는 중입니다...<br><span style="font-size:14px; color:#7f8c8d;">(야후 차트 안정 엔진 구동 중)</span>`;
+            loadingEl.innerHTML = `${ticker} 데이터를 불러오는 중입니다...<br><span style="font-size:14px; color:#7f8c8d;">(야후 서버 응답 대기 중)</span>`;
             loadingEl.style.color = '#3498db';
 
+            // 1. 현재 시간을 UNIX 타임스탬프(초 단위)로 변환
             const currentUnixTime = Math.floor(Date.now() / 1000); 
-            // period1=0 세팅과 함께 interval=1d를 조합하여 전 기간 일봉 데이터 추출
+
+            // 2. range=max 대신 period1과 period2를 명시하여 타겟 URL 생성 (강제 압축 우회)
             const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?period1=0&period2=${currentUnixTime}&interval=1d`;
 
             const proxyList = [
@@ -750,22 +776,22 @@
                         if (!labels) return null;
                         if (Math.floor(val) !== val) return null; 
                         
-                        const label = labels[val]; // 예: '2023-01-05'
+                        const label = labels[val]; 
                         if (!label || label.length < 10) return null;
                         const visibleTicksCount = ticks.length;
 
                         if (visibleTicksCount < 60) {
-                            return label; // 고배율 확대 시 일자 표출
+                            return label; 
                         } else if (visibleTicksCount < 300) {
                             const day = parseInt(label.substring(8, 10));
-                            if (day <= 3) return label.substring(0, 7); // 월 단위 표출
+                            if (day <= 3) return label.substring(0, 7); 
                             return null;
                         } else {
                             if (val === 0) return label.substring(0, 4) + '-01';
                             const prevLabel = labels[val - 1];
                             if (!prevLabel) return null;
                             if (label.substring(0, 4) !== prevLabel.substring(0, 4)) {
-                                return label.substring(0, 4) + '-01'; // 기본 연도 표출
+                                return label.substring(0, 4) + '-01'; 
                             }
                             return null;
                         }
@@ -1025,8 +1051,10 @@
         function openTradeOptimizer() {
             if (!cachedData) return alert('먼저 데이터를 불러와주세요.');
             openModal('trade-optimizer-modal');
+            
             window.selectedPointFromChart = null;
             document.getElementById('custom-apply-btn').disabled = true;
+
             document.getElementById('trade-opt-apply-btn').style.display = 'none';
             document.getElementById('trade-opt-result-text').innerText = '수만 가지 조합의 딥 시뮬레이션을 진행 중입니다...';
             setTimeout(() => { runTradeOptimization(); }, 100);
@@ -1210,6 +1238,157 @@
                 closeModal('trade-optimizer-modal');
                 calculateAndRender();
             }
+        }
+
+        // --- 5. 분할매매 최적화 로직 추가 ---
+        function openSplitTradeOptimizer() {
+            if (!cachedData) return alert('먼저 데이터를 불러와주세요.');
+            openModal('split-trade-modal');
+            document.getElementById('split-trade-result-text').innerText = '0부터 100까지 c를 대입하며 시뮬레이션을 진행 중입니다...';
+            if (splitTradeChartInstance) splitTradeChartInstance.destroy();
+            setTimeout(() => { runSplitTradeOptimization(); }, 100);
+        }
+
+        function runSplitTradeOptimization() {
+            const period = parseInt(document.getElementById('ma-period').value) || 1500;
+            const initCap = parseFloat(document.getElementById('initial-cap').value) || 10000;
+            const N = cachedData.prices.length;
+            let disparities = new Array(N).fill(null);
+            let sum = 0, validCount = 0;
+            let minD = 9999, maxD = -9999;
+
+            for (let i = 0; i < N; i++) {
+                let p = cachedData.prices[i];
+                sum += p;
+                if (i >= period) sum -= cachedData.prices[i - period];
+                if (i >= period - 1) {
+                    let avg = sum / period;
+                    if (avg > 0) {
+                        let d = p / avg;
+                        disparities[i] = d;
+                        if (Number.isFinite(d)) {
+                            validCount++;
+                            if (d < minD) minD = d;
+                            if (d > maxD) maxD = d;
+                        }
+                    }
+                }
+            }
+
+            if (validCount < 10) {
+                closeModal('split-trade-modal');
+                return alert("데이터가 너무 적어 최적화할 수 없습니다.");
+            }
+
+            let firstValidIdx = disparities.findIndex(d => d !== null);
+            if (firstValidIdx === -1) firstValidIdx = 0;
+
+            if (minD === maxD) {
+                closeModal('split-trade-modal');
+                return alert("이격도 변화가 없어 분할매매 최적화가 불가능합니다.");
+            }
+
+            let bestFinalCap = -1;
+            let bestA = 0, bestB = 0, bestC = 0;
+            
+            // 경계값 활용 (최저 이격도 x1일때 비율 1, 최고 이격도 x2일때 비율 0)
+            let x1 = minD;
+            let x2 = maxD;
+            let D = x1 * x2 * (x1 - x2);
+
+            // c값 0~100 순회하며 각 2차함수 생성 및 백테스트 진행
+            for (let c = 0; c <= 100; c++) {
+                let a = (x2 - c * x2 + c * x1) / D;
+                let b = (-c * x1 * x1 - x2 * x2 + c * x2 * x2) / D;
+
+                let cash = 0;
+                let shares = initCap / cachedData.prices[firstValidIdx]; 
+
+                for (let i = firstValidIdx; i < N; i++) {
+                    let d = disparities[i];
+                    if (d === null) continue;
+                    let p = cachedData.prices[i];
+
+                    let currentAsset = cash + shares * p;
+                    
+                    // 수식에 의한 타겟 주식비율 산출 및 범위(0~1) 제한
+                    let targetRatio = a * d * d + b * d + c;
+                    targetRatio = Math.max(0, Math.min(1, targetRatio));
+
+                    let targetStockValue = currentAsset * targetRatio;
+                    let currentStockValue = shares * p;
+                    let diff = targetStockValue - currentStockValue;
+
+                    if (diff > 0) { 
+                        // 부족하면 추가 매수
+                        let buyAmount = Math.min(cash, diff); 
+                        shares += buyAmount / p;
+                        cash -= buyAmount;
+                    } else if (diff < 0) { 
+                        // 초과하면 매도
+                        let sellShares = Math.min(shares, -diff / p);
+                        shares -= sellShares;
+                        cash += sellShares * p;
+                    }
+                }
+
+                let finalCap = cash + shares * cachedData.prices[N - 1];
+                if (finalCap > bestFinalCap) {
+                    bestFinalCap = finalCap;
+                    bestA = a;
+                    bestB = b;
+                    bestC = c;
+                }
+            }
+
+            // 최적화된 2차함수 곡선 데이터 생성
+            let curveX = [];
+            let curveY = [];
+            let step = (maxD - minD) / 100;
+            for (let x = minD; x <= maxD; x += step) {
+                curveX.push(x.toFixed(3));
+                let y = bestA * x * x + bestB * x + bestC;
+                y = Math.max(0, Math.min(1, y)); // 0~100% 범위
+                curveY.push((y * 100).toFixed(2)); 
+            }
+
+            const ctx = document.getElementById('splitTradeChart').getContext('2d');
+            if (splitTradeChartInstance) splitTradeChartInstance.destroy();
+
+            splitTradeChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: curveX,
+                    datasets: [{
+                        label: '최적 목표 주식 비율 (%)',
+                        data: curveY,
+                        borderColor: '#8e44ad',
+                        backgroundColor: 'rgba(142, 68, 173, 0.1)',
+                        borderWidth: 3,
+                        pointRadius: 0,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { zoom: zoomPluginX },
+                    scales: {
+                        x: { 
+                            title: { display: true, text: '이격도 (x)' },
+                            ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 }
+                        },
+                        y: { 
+                            title: { display: true, text: '주식 비율 (%)' }, 
+                            min: 0, max: 100 
+                        }
+                    }
+                }
+            });
+
+            document.getElementById('split-trade-result-text').innerHTML =
+                `<span style="color:#2c3e50; font-size: 15px;">수식: y = ${bestA.toFixed(4)}x² + ${bestB.toFixed(4)}x + ${bestC}</span><br>` +
+                `최적화된 c값: <span style="color:#e74c3c;">${bestC}</span> <br>` +
+                `예상 최종 자산: <span style="color:#d35400; font-size:24px;">${bestFinalCap.toLocaleString(undefined, {maximumFractionDigits:2})}</span>`;
         }
 
         window.onload = handleRenderClick;
