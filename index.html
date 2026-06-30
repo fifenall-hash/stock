@@ -324,9 +324,9 @@
                 <div style="margin-bottom:10px;">
                     <strong>탐색 해상도 모드:</strong>
                     <select id="split-mode-select" style="padding:4px; border-radius:4px; border:1px solid #ced4da; margin-left:10px; font-family:inherit;">
-                        <option value="65_0.25">65구간 & 0.25갭 (약 265만 조합, 1~3초 소요)</option>
-                        <option value="55_0.2">55구간 & 0.2갭 (약 308만 조합, 1~3초 소요)</option>
-                        <option value="41_0.1">41구간 & 0.1갭 (약 221만 조합, 1~3초 소요)</option>
+                        <option value="33_0.2">33구간 & 0.2갭 (약 316만 조합, 1~3초 소요)</option>
+                        <option value="18_0.1">18구간 & 0.1갭 (약 353만 조합, 1~3초 소요)</option>
+                        <option value="11_0.05">11구간 & 0.05갭 (약 236만 조합, 1~3초 소요)</option>
                     </select>
                 </div>
                 <div style="display:flex; gap:15px; flex-wrap:wrap; align-items:center;">
@@ -1445,7 +1445,7 @@
             document.getElementById('split-result-panel').style.display = 'block';
             document.getElementById('split-trade-result-text').innerHTML = 
                 `경우의 수를 100% 완전 탐색 중입니다. 브라우저가 잠시 멈출 수 있습니다...<br><br>` +
-                `<span style="color:#7f8c8d; font-size:14px;">(선택 옵션: ${B}구간 / ${gap}갭 / 30단위 관망구간 포함)</span>`;
+                `<span style="color:#7f8c8d; font-size:14px;">(선택 옵션: ${B}구간 / ${gap}갭 / 관망구간 전체의 40~80% 길이 탐색)</span>`;
 
             setTimeout(() => { 
                 runSplitTradeOptimization(userStartD, userEndD, B, gap); 
@@ -1507,9 +1507,12 @@
             targetRatioMap[0] = 1.0;
             targetRatioMap[B + 1] = 0.0;
 
-            // 관망구간(Hold Zone) H는 최소 30부터 30단위로 증가
-            for (let H = 30; H <= B; H += 30) {
-                // 시작점 S의 배치 가능한 위치 반복
+            // 관망구간(Hold Zone) H는 전체 구간의 2/5(40%) 부터 4/5(80%) 범위에서 탐색
+            let H_min = Math.floor(B * 2 / 5);
+            let H_max = Math.floor(B * 4 / 5);
+
+            for (let H = H_min; H <= H_max; H++) {
+                // 시작점 S의 배치 가능한 위치 반복 (0 부터 B - H 까지)
                 for (let S = 0; S <= B - H; S++) {
                     const H_start = S + 1; // 시프트 보정
                     const H_end = S + 1 + H;
