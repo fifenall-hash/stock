@@ -408,8 +408,12 @@
             <canvas id="disparityChart"></canvas>
         </div>
 
-        <div class="btn-container">
-            <button class="btn btn-download" onclick="downloadCSV()">⬇️ 데이터 표 다운로드 (.csv)</button>
+        <div class="btn-container" style="display:flex; justify-content:center; align-items:center; gap:10px; margin-bottom:10px;">
+            <select id="csv-download-option" style="padding:8px; border-radius:6px; border:1px solid #ced4da; font-family:inherit;">
+                <option value="valid">이격도 발생일 기준 다운로드</option>
+                <option value="all">최초 1일차 기준 전체 다운로드</option>
+            </select>
+            <button class="btn btn-download" style="margin-top:0;" onclick="downloadCSV()">⬇️ 데이터 표 다운로드 (.csv)</button>
         </div>
 
         <!-- 표 영역 (현금, 주식평가액 컬럼 추가) -->
@@ -745,7 +749,8 @@
                 tradeActions: tradeActions,
                 cash: cashHistory,
                 stock: stockHistory,
-                capital: capitalHistory
+                capital: capitalHistory,
+                firstValidIdx: firstValidIdx
             };
 
             // 6. 회귀분석
@@ -998,13 +1003,19 @@
         function downloadCSV() {
             if (!window.fullCsvData) return alert('다운로드할 데이터가 없습니다.');
             
+            const option = document.getElementById('csv-download-option').value;
+            const { dates, prices, sma, disparity, mulrim, tradeActions, cash, stock, capital, firstValidIdx } = window.fullCsvData;
+            
+            let startIndex = 0;
+            if (option === 'valid') {
+                startIndex = firstValidIdx;
+            }
+
             let csvContent = "\uFEFF"; 
             csvContent += "날짜,수정종가,N일 이평선,N일 이격도,물림일수(일),매매 상태,보유 현금,주식 평가액,총 자산\n";
             
-            const { dates, prices, sma, disparity, mulrim, tradeActions, cash, stock, capital } = window.fullCsvData;
-            
-            // 표에 보이는 순서(최신순)와 동일하게 역순 기록
-            for (let i = dates.length - 1; i >= 0; i--) {
+            // 표에 보이는 순서(최신순)와 동일하게 역순 기록. 선택한 시작점까지만 추출
+            for (let i = dates.length - 1; i >= startIndex; i--) {
                 const date = dates[i];
                 const price = prices[i] ? prices[i].toFixed(4) : '-';
                 const smaVal = sma[i] !== null ? sma[i].toFixed(4) : '-';
