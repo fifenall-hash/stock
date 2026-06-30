@@ -1415,8 +1415,8 @@
             let iterations = 0;
 
             const prices = cachedData.prices;
-            // 시작점(데이터 1일차) 전액 매수 세팅
-            const initialShares = initCap / prices[0];
+            // 이격도 발생 첫 지점 전액 매수 세팅
+            const initialShares = initCap / prices[firstValidIdx];
             const lastPrice = prices[N - 1];
 
             let currentSeq = new Int32Array(numDrops).fill(0);
