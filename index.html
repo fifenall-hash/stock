@@ -235,6 +235,19 @@
             margin-top: 15px;
             flex-wrap: wrap;
         }
+        
+        /* 표 스타일 보강 */
+        #data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        #data-table th, #data-table td {
+            border: 1px solid #ddd;
+            padding: 6px;
+            text-align: center;
+        }
+        #data-table th { background-color: #f1f2f6; }
     </style>
 </head>
 <body>
@@ -311,9 +324,9 @@
                 <div style="margin-bottom:10px;">
                     <strong>탐색 해상도 모드:</strong>
                     <select id="split-mode-select" style="padding:4px; border-radius:4px; border:1px solid #ced4da; margin-left:10px; font-family:inherit;">
+                        <option value="65_0.25">65구간 & 0.25갭 (약 265만 조합, 1~3초 소요)</option>
                         <option value="55_0.2">55구간 & 0.2갭 (약 308만 조합, 1~3초 소요)</option>
                         <option value="41_0.1">41구간 & 0.1갭 (약 221만 조합, 1~3초 소요)</option>
-                        <option value="37_0.05">37구간 & 0.05갭 (약 184만 조합, 1~3초 소요)</option>
                     </select>
                 </div>
                 <div style="display:flex; gap:15px; flex-wrap:wrap; align-items:center;">
@@ -396,10 +409,11 @@
         </div>
 
         <div class="btn-container">
-            <button class="btn btn-download" onclick="downloadCSV()">⬇️ 일봉 데이터 표 다운로드 (.csv)</button>
+            <button class="btn btn-download" onclick="downloadCSV()">⬇️ 데이터 표 다운로드 (.csv)</button>
         </div>
 
-        <div id="table-container">
+        <!-- 표 영역 (현금, 주식평가액 컬럼 추가) -->
+        <div id="table-container" style="display:block; width:100%; overflow-x:auto; margin-top:15px;">
             <table id="data-table">
                 <thead>
                     <tr>
@@ -409,6 +423,8 @@
                         <th>N일 이격도</th>
                         <th>물림일수(일)</th>
                         <th>매매 상태</th>
+                        <th>보유 현금</th>
+                        <th>주식 평가액</th>
                         <th>총 자산</th>
                     </tr>
                 </thead>
@@ -641,28 +657,27 @@
                 }
             }
 
-            // 3. 백테스트 (초기 자본 전액 주식 보유 상태 반영)
+            // 3. 백테스트 (데이터 1일 차부터 자본 전액이 주식에 들어간 상태로 시작)
             let firstValidIdx = disparityData.findIndex(d => d !== null);
             if (firstValidIdx === -1) firstValidIdx = 0; 
 
             let isHolding = true;
             let cash = 0;
-            let shares = initialCap / cachedData.prices[firstValidIdx]; 
+            let shares = initialCap / cachedData.prices[0]; // 무조건 1일 차 종가에 전액 매수한 상태로 세팅
             
             let tradeActions = new Array(N).fill("-");
             let capitalHistory = new Array(N).fill(null);
+            let cashHistory = new Array(N).fill(null);
+            let stockHistory = new Array(N).fill(null);
 
-            tradeActions[firstValidIdx] = "초기 보유 시작";
+            tradeActions[0] = "초기 보유 시작"; // 1일 차에 전액 매수했다고 마킹
 
-            for (let i = 0; i < firstValidIdx; i++) {
-                capitalHistory[i] = initialCap;
-            }
-
-            for (let i = firstValidIdx; i < N; i++) {
+            for (let i = 0; i < N; i++) {
                 let d = disparityData[i];
                 let p = cachedData.prices[i];
                 
-                if (d !== null) {
+                // 이격도가 존재하는 시점부터 최적화 조건 판단 시작
+                if (d !== null && i >= firstValidIdx) {
                     if (isHolding && d > sellPoint && shares > 0) {
                         cash = shares * p;
                         shares = 0;
@@ -675,11 +690,14 @@
                         tradeActions[i] = "매수 (Buy)";
                     }
                 }
+                cashHistory[i] = cash;
+                stockHistory[i] = shares * p;
                 capitalHistory[i] = cash + (shares * p);
             }
             let finalCapital = capitalHistory[N - 1];
 
-            const startDateStr = cachedData.dates[firstValidIdx];
+            // 1일차부터 시작했으므로 날짜 기간도 처음부터 끝까지로 조정
+            const startDateStr = cachedData.dates[0];
             const endDateStr = cachedData.dates[N - 1];
             const startDt = new Date(startDateStr);
             const endDt = new Date(endDateStr);
@@ -691,7 +709,7 @@
             
             const cagr = (Math.pow(finalCapital / initialCap, 1 / totalYears) - 1) * 100;
             
-            const tradingDays = N - firstValidIdx; // 실수행 기간 동안의 개장일 수 계산 추가
+            const tradingDays = N; // 실수행 개장일 수
 
             // 4. 물림일수 필터링
             let displayMulrimData = new Array(N);
@@ -749,7 +767,7 @@
                 const latestPrice = cachedData.prices[N - 1]; 
                 const latestDisparity = validDisparities[validDisparities.length - 1];
                 
-                // [위험도 평가 업데이트] 이격도 표준편차 및 99% 신뢰구간 (정규분포 2.576σ 기준)
+                // [위험도 평가] 이격도 표준편차 및 99% 신뢰구간 (정규분포 2.576σ 기준)
                 let dispStdDev = 0;
                 let dispSqSum = 0;
                 for (let i = 0; i < validDisparities.length; i++) {
@@ -761,11 +779,9 @@
                 const upper99 = avgDisparity + (Z_99 * dispStdDev);
                 const lower99 = avgDisparity - (Z_99 * dispStdDev);
                 
-                let riskLevel = 50; // 기본값 50% (평균치)
+                let riskLevel = 50; 
                 if (upper99 > lower99) {
-                    // 상단 터치시 100%, 하단 터치시 0%가 되도록 선형 변환
                     riskLevel = ((latestDisparity - lower99) / (upper99 - lower99)) * 100;
-                    // 구간 외 값(0 미만 또는 100 초과)은 0%와 100%로 고정
                     riskLevel = Math.max(0, Math.min(100, riskLevel));
                 }
                 
@@ -796,7 +812,9 @@
 
             renderPriceChart(cachedData.dates, cachedData.prices, smaData, priceAvgDisparityLineData, priceBuyLineData, priceSellLineData, avgDisparity, period);
             renderDisparityChart(cachedData.dates, disparityData, disparityBaseLineData, disparityAvgLineData, disparityBuyLineData, disparitySellLineData, avgDisparity, maxDisp, minDisp, period);
-            populateTable(cachedData.dates, cachedData.prices, displayMulrimData, smaData, disparityData, tradeActions, capitalHistory, period);
+            
+            // 표 렌더링 호출 (현금, 주식 이력 배열 추가)
+            populateTable(cachedData.dates, cachedData.prices, displayMulrimData, smaData, disparityData, tradeActions, cashHistory, stockHistory, capitalHistory, period);
         }
 
         // --- 줌 스케일에 유연하게 대처하는 지능형 틱 라벨링 함수 ---
@@ -898,7 +916,7 @@
             });
         }
 
-        function populateTable(dates, prices, displayMulrimData, smaData, disparityData, tradeActions, capitalHistory, period) {
+        function populateTable(dates, prices, displayMulrimData, smaData, disparityData, tradeActions, cashHistory, stockHistory, capitalHistory, period) {
             const tableBody = document.getElementById('table-body');
             let htmlContent = '';
             for (let i = dates.length - 1; i >= 0; i--) {
@@ -911,8 +929,13 @@
                 let actionStyle = '';
                 if(action.includes("매수")) actionStyle = 'color:#27ae60; font-weight:bold;';
                 else if(action.includes("매도")) actionStyle = 'color:#e74c3c; font-weight:bold;';
-                const capital = capitalHistory[i] !== null ? capitalHistory[i].toFixed(2) : '-';
-                htmlContent += `<tr><td>${date}</td><td>${price}</td><td>${sma}</td><td>${disparity}</td><td>${mulrim}</td><td style="${actionStyle}">${action}</td><td>${capital}</td></tr>`;
+                
+                // 표에 보여질 데이터 포맷팅
+                const cashVal = cashHistory[i] !== null ? cashHistory[i].toFixed(2) : '-';
+                const stockVal = stockHistory[i] !== null ? stockHistory[i].toFixed(2) : '-';
+                const capitalVal = capitalHistory[i] !== null ? capitalHistory[i].toFixed(2) : '-';
+                
+                htmlContent += `<tr><td>${date}</td><td>${price}</td><td>${sma}</td><td>${disparity}</td><td>${mulrim}</td><td style="${actionStyle}">${action}</td><td style="color:#2c3e50;">${cashVal}</td><td style="color:#8e44ad;">${stockVal}</td><td style="font-weight:bold; color:#d35400;">${capitalVal}</td></tr>`;
             }
             tableBody.innerHTML = htmlContent;
         }
@@ -1150,7 +1173,8 @@
                     if (firstValidIdx === -1) firstValidIdx = 0;
 
                     let cash = 0;
-                    let shares = initCap / cachedData.prices[firstValidIdx];
+                    // 전액 매수한 상태로 시작
+                    let shares = initCap / cachedData.prices[0];
                     let isHolding = true;
                     
                     for (let k = firstValidIdx; k < N; k++) {
@@ -1391,7 +1415,8 @@
             let iterations = 0;
 
             const prices = cachedData.prices;
-            const initialShares = initCap / prices[firstValidIdx];
+            // 시작점(데이터 1일차) 전액 매수 세팅
+            const initialShares = initCap / prices[0];
             const lastPrice = prices[N - 1];
 
             let currentSeq = new Int32Array(numDrops).fill(0);
