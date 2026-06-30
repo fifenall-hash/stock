@@ -120,6 +120,8 @@
         .btn:hover { background-color: #1a252f; }
         .btn-optimize { background-color: #8e44ad; }
         .btn-optimize:hover { background-color: #732d91; }
+        .btn-split { background-color: #8e44ad; }
+        .btn-split:hover { background-color: #732d91; }
         .btn-trade-opt { background-color: #d35400; }
         .btn-trade-opt:hover { background-color: #a04000; }
         .btn-info { background-color: #2980b9; }
@@ -255,7 +257,7 @@
         </div>
     </div>
 
-    <!-- 2. 매수/매도 최적화 모달창 (2D 색상 히트맵 방식) -->
+    <!-- 2. 매수/매도 최적화 모달창 -->
     <div id="trade-optimizer-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 style="font-size: 18px; margin-top: 0; color:#d35400;">📊 매수/매도 타점 최적화</h2>
@@ -309,9 +311,9 @@
                 <div style="margin-bottom:10px;">
                     <strong>탐색 해상도 모드:</strong>
                     <select id="split-mode-select" style="padding:4px; border-radius:4px; border:1px solid #ced4da; margin-left:10px; font-family:inherit;">
-                        <option value="50_0.2">50구간 & 0.2갭 (약 316만 조합, 3~10초)</option>
-                        <option value="16_0.1">16구간 & 0.1갭 (약 326만 조합, 3~10초)</option>
-                        <option value="9_0.05">9구간 & 0.05갭 (약 310만 조합, 3~10초)</option>
+                        <option value="55_0.2">55구간 & 0.2갭 (약 308만 조합, 1~3초 소요)</option>
+                        <option value="41_0.1">41구간 & 0.1갭 (약 221만 조합, 1~3초 소요)</option>
+                        <option value="37_0.05">37구간 & 0.05갭 (약 184만 조합, 1~3초 소요)</option>
                     </select>
                 </div>
                 <div style="display:flex; gap:15px; flex-wrap:wrap; align-items:center;">
@@ -372,7 +374,7 @@
             <div class="btn-group" style="margin-top: 5px;">
                 <button class="btn btn-trade-opt" onclick="openTradeOptimizer()">📊 매수/매도 최적화</button>
                 <button class="btn btn-optimize" onclick="openOptimizer()">💡 기준일수 최적화 (R²)</button>
-                <button class="btn" style="background-color:#8e44ad; color:white;" onclick="openSplitTradeOptimizer()">📉 분할매매 최적화 보기</button>
+                <button class="btn btn-split" onclick="openSplitTradeOptimizer()">📉 분할매매 최적화 보기</button>
             </div>
             <div class="btn-group" style="margin-top: 5px;">
                 <button class="btn btn-info" onclick="openTimeseriesModal()">📅 이격도 vs 물림일수</button>
@@ -442,6 +444,8 @@
 
         window.currentAnalysis = null;
         window.selectedPointFromChart = null; 
+        window.splitMinD = 0;
+        window.splitMaxD = 0;
 
         // --- 공통 모달 및 줌 제어 로직 ---
         function openModal(modalId) {
@@ -1367,9 +1371,6 @@
             const numDrops = Math.round(1.0 / gap);
 
             // JIT 연산속도 극대화를 위해 버킷 인덱스를 +1 시프트하여 배열화 (분기문 제거용)
-            // 0: 시작점 이하 (100% 매수)
-            // B+1: 끝점 이상 (0% 매수)
-            // 1 ~ B: 계산될 가변 구간
             let mappedIdx = new Int32Array(N).fill(-1);
             for(let i = firstValidIdx; i < N; i++){
                 let d = disparities[i];
