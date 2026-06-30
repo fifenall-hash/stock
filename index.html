@@ -1,4 +1,4 @@
-ㅌ<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
@@ -657,27 +657,27 @@
                 }
             }
 
-            // 3. 백테스트 (데이터 1일 차부터 자본 전액이 주식에 들어간 상태로 시작)
+            // 3. 백테스트 (데이터 이격도 첫 지점부터 자본 전액이 주식에 들어간 상태로 시작)
             let firstValidIdx = disparityData.findIndex(d => d !== null);
             if (firstValidIdx === -1) firstValidIdx = 0; 
 
             let isHolding = true;
             let cash = 0;
-            let shares = initialCap / cachedData.prices[0]; // 무조건 1일 차 종가에 전액 매수한 상태로 세팅
+            let shares = initialCap / cachedData.prices[firstValidIdx]; // 무조건 이격도 첫 지점 종가에 전액 매수
             
             let tradeActions = new Array(N).fill("-");
             let capitalHistory = new Array(N).fill(null);
             let cashHistory = new Array(N).fill(null);
             let stockHistory = new Array(N).fill(null);
 
-            tradeActions[0] = "초기 보유 시작"; // 1일 차에 전액 매수했다고 마킹
+            tradeActions[firstValidIdx] = "초기 보유 시작"; // 최초 지점에 전액 매수 마킹
 
-            for (let i = 0; i < N; i++) {
+            for (let i = firstValidIdx; i < N; i++) {
                 let d = disparityData[i];
                 let p = cachedData.prices[i];
                 
                 // 이격도가 존재하는 시점부터 최적화 조건 판단 시작
-                if (d !== null && i >= firstValidIdx) {
+                if (d !== null) {
                     if (isHolding && d > sellPoint && shares > 0) {
                         cash = shares * p;
                         shares = 0;
@@ -696,8 +696,8 @@
             }
             let finalCapital = capitalHistory[N - 1];
 
-            // 1일차부터 시작했으므로 날짜 기간도 처음부터 끝까지로 조정
-            const startDateStr = cachedData.dates[0];
+            // 1일차가 아닌 이격도 시작 지점부터 날짜 기간 조정
+            const startDateStr = cachedData.dates[firstValidIdx];
             const endDateStr = cachedData.dates[N - 1];
             const startDt = new Date(startDateStr);
             const endDt = new Date(endDateStr);
@@ -709,7 +709,7 @@
             
             const cagr = (Math.pow(finalCapital / initialCap, 1 / totalYears) - 1) * 100;
             
-            const tradingDays = N; // 실수행 개장일 수
+            const tradingDays = N - firstValidIdx; // 실수행 개장일 수
 
             // 4. 물림일수 필터링
             let displayMulrimData = new Array(N);
@@ -755,7 +755,9 @@
             }
 
             window.currentAnalysis = {
-                dates: cachedData.dates, disparity: disparityData, mulrim: safeMulrimData,
+                dates: cachedData.dates.slice(firstValidIdx), 
+                disparity: disparityData.slice(firstValidIdx), 
+                mulrim: safeMulrimData.slice(firstValidIdx),
                 slope: slope, intercept: intercept, minDisp: minDisp, maxDisp: maxDisp, period: period
             };
 
@@ -810,11 +812,39 @@
                 evalPanel.style.display = 'block';
             }
 
-            renderPriceChart(cachedData.dates, cachedData.prices, smaData, priceAvgDisparityLineData, priceBuyLineData, priceSellLineData, avgDisparity, period);
-            renderDisparityChart(cachedData.dates, disparityData, disparityBaseLineData, disparityAvgLineData, disparityBuyLineData, disparitySellLineData, avgDisparity, maxDisp, minDisp, period);
+            // 모든 차트와 테이블에 firstValidIdx 시점부터 자른 배열만 넘겨줌
+            renderPriceChart(
+                cachedData.dates.slice(firstValidIdx), 
+                cachedData.prices.slice(firstValidIdx), 
+                smaData.slice(firstValidIdx), 
+                priceAvgDisparityLineData.slice(firstValidIdx), 
+                priceBuyLineData.slice(firstValidIdx), 
+                priceSellLineData.slice(firstValidIdx), 
+                avgDisparity, period
+            );
             
-            // 표 렌더링 호출 (현금, 주식 이력 배열 추가)
-            populateTable(cachedData.dates, cachedData.prices, displayMulrimData, smaData, disparityData, tradeActions, cashHistory, stockHistory, capitalHistory, period);
+            renderDisparityChart(
+                cachedData.dates.slice(firstValidIdx), 
+                disparityData.slice(firstValidIdx), 
+                disparityBaseLineData.slice(firstValidIdx), 
+                disparityAvgLineData.slice(firstValidIdx), 
+                disparityBuyLineData.slice(firstValidIdx), 
+                disparitySellLineData.slice(firstValidIdx), 
+                avgDisparity, maxDisp, minDisp, period
+            );
+            
+            populateTable(
+                cachedData.dates.slice(firstValidIdx), 
+                cachedData.prices.slice(firstValidIdx), 
+                displayMulrimData.slice(firstValidIdx), 
+                smaData.slice(firstValidIdx), 
+                disparityData.slice(firstValidIdx), 
+                tradeActions.slice(firstValidIdx), 
+                cashHistory.slice(firstValidIdx), 
+                stockHistory.slice(firstValidIdx), 
+                capitalHistory.slice(firstValidIdx), 
+                period
+            );
         }
 
         // --- 줌 스케일에 유연하게 대처하는 지능형 틱 라벨링 함수 ---
@@ -1173,8 +1203,8 @@
                     if (firstValidIdx === -1) firstValidIdx = 0;
 
                     let cash = 0;
-                    // 전액 매수한 상태로 시작
-                    let shares = initCap / cachedData.prices[0];
+                    // 이격도가 나타나는 첫 지점 전액 매수한 상태로 시작
+                    let shares = initCap / cachedData.prices[firstValidIdx];
                     let isHolding = true;
                     
                     for (let k = firstValidIdx; k < N; k++) {
