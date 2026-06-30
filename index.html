@@ -462,6 +462,9 @@
         window.selectedPointFromChart = null; 
         window.splitMinD = 0;
         window.splitMaxD = 0;
+        
+        // CSV 추출용 전체 데이터셋 저장 변수 추가
+        window.fullCsvData = null;
 
         // --- 공통 모달 및 줌 제어 로직 ---
         function openModal(modalId) {
@@ -670,6 +673,14 @@
             let cashHistory = new Array(N).fill(null);
             let stockHistory = new Array(N).fill(null);
 
+            // 시뮬레이션 이전 구간(이평선 계산 기간) 채우기 - 다운로드 전용 데이터
+            for (let i = 0; i < firstValidIdx; i++) {
+                cashHistory[i] = initialCap;
+                stockHistory[i] = 0;
+                capitalHistory[i] = initialCap;
+                tradeActions[i] = "시뮬레이션 대기";
+            }
+
             tradeActions[firstValidIdx] = "초기 보유 시작"; // 최초 지점에 전액 매수 마킹
 
             for (let i = firstValidIdx; i < N; i++) {
@@ -724,7 +735,20 @@
                 }
             }
 
-            // 5. 회귀분석
+            // 5. CSV 다운로드를 위해 원본(Full) 배열들 전역 변수 저장
+            window.fullCsvData = {
+                dates: cachedData.dates,
+                prices: cachedData.prices,
+                sma: smaData,
+                disparity: disparityData,
+                mulrim: displayMulrimData,
+                tradeActions: tradeActions,
+                cash: cashHistory,
+                stock: stockHistory,
+                capital: capitalHistory
+            };
+
+            // 6. 회귀분석
             let rSquared = 0, slope = 0, intercept = 0, validX = [], validY = [];
             for (let i = 0; i < N; i++) {
                 if (disparityData[i] !== null && safeMulrimData[i] !== null) {
@@ -970,19 +994,30 @@
             tableBody.innerHTML = htmlContent;
         }
 
+        // CSV 다운로드 함수 전면 교체: HTML 표에서 읽어오지 않고 전체(Full) 배열 데이터를 직접 조립하여 출력
         function downloadCSV() {
-            const table = document.getElementById('data-table');
+            if (!window.fullCsvData) return alert('다운로드할 데이터가 없습니다.');
+            
             let csvContent = "\uFEFF"; 
-            for (let i = 0; i < table.rows.length; i++) {
-                let row = table.rows[i];
-                let rowData = [];
-                for (let j = 0; j < row.cells.length; j++) {
-                    let cellText = row.cells[j].innerText;
-                    cellText = '"' + cellText.replace(/"/g, '""') + '"';
-                    rowData.push(cellText);
-                }
-                csvContent += rowData.join(",") + "\n";
+            csvContent += "날짜,수정종가,N일 이평선,N일 이격도,물림일수(일),매매 상태,보유 현금,주식 평가액,총 자산\n";
+            
+            const { dates, prices, sma, disparity, mulrim, tradeActions, cash, stock, capital } = window.fullCsvData;
+            
+            // 표에 보이는 순서(최신순)와 동일하게 역순 기록
+            for (let i = dates.length - 1; i >= 0; i--) {
+                const date = dates[i];
+                const price = prices[i] ? prices[i].toFixed(4) : '-';
+                const smaVal = sma[i] !== null ? sma[i].toFixed(4) : '-';
+                const disp = disparity[i] !== null ? disparity[i].toFixed(4) : '-';
+                const mul = mulrim[i] !== null ? mulrim[i] : '-';
+                const action = tradeActions[i];
+                const c = cash[i] !== null ? cash[i].toFixed(2) : '-';
+                const s = stock[i] !== null ? stock[i].toFixed(2) : '-';
+                const cap = capital[i] !== null ? capital[i].toFixed(2) : '-';
+                
+                csvContent += `"${date}","${price}","${smaVal}","${disp}","${mul}","${action}","${c}","${s}","${cap}"\n`;
             }
+            
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
