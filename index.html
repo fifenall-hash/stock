@@ -798,7 +798,7 @@
                 const latestPrice = cachedData.prices[N - 1]; 
                 const latestDisparity = validDisparities[validDisparities.length - 1];
                 
-                // [위험도 평가] 이격도 표준편차 및 99% 신뢰구간 (정규분포 2.576σ 기준)
+                // [위험도 평가] 정규분포 누적확률함수(CDF) 기반
                 let dispStdDev = 0;
                 let dispSqSum = 0;
                 for (let i = 0; i < validDisparities.length; i++) {
@@ -806,14 +806,21 @@
                 }
                 dispStdDev = Math.sqrt(dispSqSum / validDisparities.length);
                 
-                const Z_99 = 2.576; // 99% 신뢰구간 
-                const upper99 = avgDisparity + (Z_99 * dispStdDev);
-                const lower99 = avgDisparity - (Z_99 * dispStdDev);
+                // 오차함수(erf) 근사치 계산 함수
+                function erf(x) {
+                    let sign = (x >= 0) ? 1 : -1;
+                    x = Math.abs(x);
+                    let a1 =  0.254829592, a2 = -0.284496736, a3 =  1.421413741, a4 = -1.453152027, a5 =  1.061405429, p = 0.3275911;
+                    let t = 1.0 / (1.0 + p * x);
+                    let y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+                    return sign * y;
+                }
                 
                 let riskLevel = 50; 
-                if (upper99 > lower99) {
-                    riskLevel = ((latestDisparity - lower99) / (upper99 - lower99)) * 100;
-                    riskLevel = Math.max(0, Math.min(100, riskLevel));
+                if (dispStdDev > 0) {
+                    let zScore = (latestDisparity - avgDisparity) / dispStdDev;
+                    let cdf = 0.5 * (1 + erf(zScore / Math.sqrt(2)));
+                    riskLevel = cdf * 100;
                 }
                 
                 let expectedMulrim = Math.max(0, Math.round(slope * latestDisparity + intercept)) || 0;
