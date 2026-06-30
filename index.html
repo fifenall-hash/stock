@@ -1270,7 +1270,7 @@
             }
         }
 
-        // --- 5. 분할매매 맞춤형 완전 탐색 로직 ---
+        // --- 5. 분할매매 관망구간 완전 탐색 로직 ---
         function openSplitTradeOptimizer() {
             if (!cachedData) return alert('먼저 데이터를 불러와주세요.');
             
@@ -1299,13 +1299,11 @@
             if (validCount < 10) return alert("데이터가 너무 적어 최적화할 수 없습니다.");
             if (minD === maxD) return alert("이격도 변화가 없어 최적화가 불가능합니다.");
 
-            // 초기값 세팅 (소수점 3자리 내림/올림)
             window.splitMinD = minD;
             window.splitMaxD = maxD;
             document.getElementById('split-start-d').value = Math.floor(minD * 1000) / 1000;
             document.getElementById('split-end-d').value = Math.ceil(maxD * 1000) / 1000;
 
-            // UI 초기화
             document.getElementById('split-setup-panel').style.display = 'block';
             document.getElementById('split-result-panel').style.display = 'none';
             document.getElementById('split-reset-zoom-btn').style.display = 'none';
@@ -1325,7 +1323,6 @@
             if(isNaN(userStartD) || isNaN(userEndD)) return alert("시작 점과 끝 점을 정확히 입력해주세요.");
             if(userStartD >= userEndD) return alert("시작 점 이격도는 끝 점 이격도보다 반드시 작아야 합니다.");
             
-            // 데이터 범위를 벗어난 입력값 제한 (Clamp)
             if (userStartD < window.splitMinD) userStartD = window.splitMinD;
             if (userEndD > window.splitMaxD) userEndD = window.splitMaxD;
 
@@ -1333,14 +1330,12 @@
             const B = parseInt(parts[0]);
             const gap = parseFloat(parts[1]);
 
-            // 연산 시작 화면으로 전환
             document.getElementById('split-setup-panel').style.display = 'none';
             document.getElementById('split-result-panel').style.display = 'block';
             document.getElementById('split-trade-result-text').innerHTML = 
-                `경우의 수를 100% 완전 탐색 중입니다. 브라우저가 잠시 멈출 수 있습니다 (3~10초 소요)...<br><br>` +
-                `<span style="color:#7f8c8d; font-size:14px;">(선택 옵션: ${B}구간 / ${gap}갭 / ${userStartD.toFixed(3)} ~ ${userEndD.toFixed(3)})</span>`;
+                `경우의 수를 100% 완전 탐색 중입니다. 브라우저가 잠시 멈출 수 있습니다...<br><br>` +
+                `<span style="color:#7f8c8d; font-size:14px;">(선택 옵션: ${B}구간 / ${gap}갭 / 30단위 관망구간 포함)</span>`;
 
-            // UI가 그려질 시간을 주기 위해 약간의 지연 후 딥 서치 실행
             setTimeout(() => { 
                 runSplitTradeOptimization(userStartD, userEndD, B, gap); 
             }, 150);
@@ -1369,107 +1364,119 @@
             let firstValidIdx = disparities.findIndex(d => d !== null);
             if (firstValidIdx === -1) firstValidIdx = 0;
 
-            // 찾아야 할 하락 지점(Drop point)의 개수 산출
             const numDrops = Math.round(1.0 / gap);
 
-            // 날짜별 이격도의 버킷 인덱스를 사전 매핑 (최적화를 위함)
-            let bucketIndices = new Int32Array(N).fill(-2);
+            // JIT 연산속도 극대화를 위해 버킷 인덱스를 +1 시프트하여 배열화 (분기문 제거용)
+            // 0: 시작점 이하 (100% 매수)
+            // B+1: 끝점 이상 (0% 매수)
+            // 1 ~ B: 계산될 가변 구간
+            let mappedIdx = new Int32Array(N).fill(-1);
             for(let i = firstValidIdx; i < N; i++){
                 let d = disparities[i];
                 if (d === null) continue;
-                
-                // 설정된 시작/끝 지점 바깥은 고정 처리 (-1은 무조건 100%, B는 무조건 0%)
-                if (d <= startD) bucketIndices[i] = -1;
-                else if (d >= endD) bucketIndices[i] = B;
+                if (d <= startD) mappedIdx[i] = 0;
+                else if (d >= endD) mappedIdx[i] = B + 1;
                 else {
-                    let idx = Math.floor((d - startD) / (endD - startD) * B);
-                    if (idx >= B) idx = B - 1;
-                    bucketIndices[i] = idx;
+                    let bIdx = Math.floor((d - startD) / (endD - startD) * B);
+                    if (bIdx >= B) bIdx = B - 1;
+                    mappedIdx[i] = bIdx + 1;
                 }
             }
 
             let bestFinalCap = -1;
             let bestSeq = new Int32Array(numDrops).fill(0);
+            let bestS = -1;
+            let bestH = -1;
+            let iterations = 0;
 
-            // V8 Javascript JIT 컴파일러 가속용 1차원 지역변수
             const prices = cachedData.prices;
-            const buckets = bucketIndices;
             const initialShares = initCap / prices[firstValidIdx];
             const lastPrice = prices[N - 1];
 
-            let iterations = 0;
             let currentSeq = new Int32Array(numDrops).fill(0);
-            let ratioMap = new Float64Array(B);
+            let targetRatioMap = new Float64Array(B + 2);
+            targetRatioMap[0] = 1.0;
+            targetRatioMap[B + 1] = 0.0;
 
-            // 재귀적 DFS(깊이 우선 탐색)로 선택된 조건에 맞춰 하락 지점의 조합을 유동적으로 생성
-            function dfs(dropIdx, startBucket) {
-                if (dropIdx === numDrops) {
-                    // 하나의 완전한 경우의 수가 만들어지면 즉시 백테스트 평가 실행
-                    let sIdx = 0;
-                    for(let b=0; b<B; b++) {
-                        while(sIdx < numDrops && b >= currentSeq[sIdx]) sIdx++;
-                        ratioMap[b] = 1.0 - sIdx * gap;
-                    }
-
-                    let cash = 0.0;
-                    let shares = initialShares;
+            // 관망구간(Hold Zone) H는 최소 30부터 30단위로 증가
+            for (let H = 30; H <= B; H += 30) {
+                // 시작점 S의 배치 가능한 위치 반복
+                for (let S = 0; S <= B - H; S++) {
+                    const H_start = S + 1; // 시프트 보정
+                    const H_end = S + 1 + H;
                     
-                    for (let k = firstValidIdx; k < N; k++) {
-                        let idx = buckets[k];
-                        if (idx === -2) continue;
+                    // DFS로 하락점(numDrops) 조합 도출
+                    function searchDrops(dropIdx, startAvail) {
+                        if (dropIdx === numDrops) {
+                            // 조합 완성 시, 관망구간을 우회하여 하락점 인덱스를 실제 맵핑
+                            let mappedSeq = new Int32Array(numDrops);
+                            for(let i=0; i<numDrops; i++) {
+                                mappedSeq[i] = currentSeq[i] < S ? currentSeq[i] : currentSeq[i] + H;
+                            }
+                            
+                            // 각 구간별 목표 비율 테이블 생성
+                            for(let b=0; b<B; b++) {
+                                let dCnt = 0;
+                                while(dCnt < numDrops && b >= mappedSeq[dCnt]) dCnt++;
+                                targetRatioMap[b + 1] = 1.0 - dCnt * gap;
+                            }
 
-                        let targetRatio = 0.0;
-                        if (idx === -1) targetRatio = 1.0;
-                        else if (idx === B) targetRatio = 0.0;
-                        else targetRatio = ratioMap[idx];
+                            let cash = 0.0;
+                            let shares = initialShares;
 
-                        let p = prices[k];
-                        let currentAsset = cash + shares * p;
-                        let targetStockValue = currentAsset * targetRatio;
-                        let currentStockValue = shares * p;
-                        let diff = targetStockValue - currentStockValue;
+                            // 수백만 번 돌아가는 핫 루프 (분기문을 완전히 제거하여 빛의 속도로 연산)
+                            for (let k = firstValidIdx; k < N; k++) {
+                                let idx = mappedIdx[k];
+                                if (idx === -1) continue;
+                                
+                                // ★ 핵심: 관망구간(Hold Zone) 내에 위치하면 아무것도 하지 않음(사지도 팔지도 않음)
+                                if (idx >= H_start && idx < H_end) continue;
 
-                        if (diff > 0) { 
-                            let buyAmount = cash < diff ? cash : diff; 
-                            shares += buyAmount / p;
-                            cash -= buyAmount;
-                        } else if (diff < 0) { 
-                            let sellShares = shares < -diff / p ? shares : -diff / p;
-                            shares -= sellShares;
-                            cash += sellShares * p;
+                                let p = prices[k];
+                                let targetRatio = targetRatioMap[idx];
+                                let diff = (cash + shares * p) * targetRatio - shares * p;
+
+                                if (diff > 0) {
+                                    let buyAmount = cash < diff ? cash : diff;
+                                    shares += buyAmount / p;
+                                    cash -= buyAmount;
+                                } else if (diff < 0) {
+                                    let sellShares = shares < -diff / p ? shares : -diff / p;
+                                    shares -= sellShares;
+                                    cash += sellShares * p;
+                                }
+                            }
+
+                            let cap = cash + shares * lastPrice;
+                            if (cap > bestFinalCap) {
+                                bestFinalCap = cap;
+                                for(let x=0; x<numDrops; x++) bestSeq[x] = mappedSeq[x];
+                                bestS = S;
+                                bestH = H;
+                            }
+                            iterations++;
+                            return;
+                        }
+                        
+                        // 하락점 배치 (중복 허용, 우하향 단조감소 유지)
+                        for (let b = startAvail; b < B - H; b++) {
+                            currentSeq[dropIdx] = b;
+                            searchDrops(dropIdx + 1, b);
                         }
                     }
-                    
-                    let cap = cash + shares * lastPrice;
-                    if (cap > bestFinalCap) {
-                        bestFinalCap = cap;
-                        for(let x=0; x<numDrops; x++) bestSeq[x] = currentSeq[x]; // 배열 딥카피
-                    }
-                    iterations++;
-                    return;
-                }
-                
-                // 단조감소(하락점이 뒤로만 이동) 조건 유지 반복문
-                for (let b = startBucket; b < B; b++) {
-                    currentSeq[dropIdx] = b;
-                    dfs(dropIdx + 1, b);
+                    searchDrops(0, 0);
                 }
             }
 
-            // 완전 탐색 알고리즘 구동 시작
-            dfs(0, 0);
-
-            // 렌더링용 차트 데이터 조립
+            // 최적 결과 차트 레이아웃 구성
             let curveX = [];
             let curveY = [];
 
-            // 최소 이격도부터 사용자가 지정한 시작점(StartD) 이전까지의 구간은 100% 고정선
             if (window.splitMinD < startD) {
                 curveX.push(window.splitMinD.toFixed(3));
                 curveY.push(100);
             }
 
-            // 사용자가 선택한 중간 구간의 계산된 계단식 곡선 입력
             for (let b = 0; b < B; b++) {
                 let x = startD + (endD - startD) * b / B;
                 curveX.push(x.toFixed(3));
@@ -1479,15 +1486,17 @@
                 curveY.push(Math.round((1.0 - sIdx * gap) * 100));
             }
 
-            // 사용자 지정 끝점(EndD) 도달 시 0% 고정
             curveX.push(endD.toFixed(3));
             curveY.push(0);
 
-            // 끝점 이후부터 최대 이격도 구간까지 0% 유지
             if (window.splitMaxD > endD) {
                 curveX.push(window.splitMaxD.toFixed(3));
                 curveY.push(0);
             }
+
+            // 관망구간 시작과 끝의 텍스트 라벨 (플러그인에서 좌표 추적용)
+            let bestS_X = (startD + (endD - startD) * bestS / B).toFixed(3);
+            let bestE_X = (startD + (endD - startD) * (bestS + bestH) / B).toFixed(3);
 
             const ctx = document.getElementById('splitTradeChart').getContext('2d');
             if (splitTradeChartInstance) splitTradeChartInstance.destroy();
@@ -1504,8 +1513,8 @@
                         borderWidth: 3,
                         pointRadius: 3, 
                         pointBackgroundColor: '#8e44ad',
-                        fill: true,
-                        stepped: true // 계단식 낙하 구조를 정확하게 표현
+                        fill: false,
+                        stepped: true
                     }]
                 },
                 options: {
@@ -1513,16 +1522,12 @@
                     plugins: { 
                         zoom: zoomPluginX,
                         tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    return `목표 주식 비율: ${context.parsed.y}%`;
-                                }
-                            }
+                            callbacks: { label: function(context) { return `목표 주식 비율: ${context.parsed.y}%`; } }
                         }
                     },
                     scales: {
                         x: { 
-                            title: { display: true, text: '이격도 (x)' },
+                            title: { display: true, text: '이격도 (x) - 회색 배경은 관망(Hold) 구역입니다.' },
                             ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 11 }
                         },
                         y: { 
@@ -1530,12 +1535,33 @@
                             min: 0, max: 100 
                         }
                     }
-                }
+                },
+                // 차트 위에 회색 관망구간을 그려주는 커스텀 플러그인 탑재
+                plugins: [{
+                    id: 'holdZoneBg',
+                    beforeDraw: (chart) => {
+                        const ctx = chart.ctx;
+                        const xAxis = chart.scales.x;
+                        const yAxis = chart.scales.y;
+                        
+                        let startIndex = chart.data.labels.indexOf(bestS_X);
+                        let endIndex = chart.data.labels.indexOf(bestE_X);
+
+                        if (startIndex !== -1 && endIndex !== -1) {
+                            let startPx = xAxis.getPixelForTick(startIndex);
+                            let endPx = xAxis.getPixelForTick(endIndex);
+                            ctx.save();
+                            ctx.fillStyle = 'rgba(149, 165, 166, 0.3)'; // 반투명 회색
+                            ctx.fillRect(startPx, yAxis.top, endPx - startPx, yAxis.bottom - yAxis.top);
+                            ctx.restore();
+                        }
+                    }
+                }]
             });
 
             document.getElementById('split-reset-zoom-btn').style.display = 'inline-block';
             document.getElementById('split-trade-result-text').innerHTML =
-                `<span style="color:#2c3e50; font-size: 15px;">총 ${iterations.toLocaleString()}가지의 비율 조합을 모두 확인하여 가장 완벽한 밸런스를 찾았습니다.</span><br><br>` +
+                `<span style="color:#2c3e50; font-size: 15px;">총 ${iterations.toLocaleString()}가지의 조합을 확인하여 최적의 밸런스와 관망구간을 찾았습니다.</span><br><br>` +
                 `최적 예상 최종 자산: <span style="color:#d35400; font-size:24px;">${bestFinalCap.toLocaleString(undefined, {maximumFractionDigits:2})}</span>`;
         }
 
