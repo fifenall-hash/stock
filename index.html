@@ -1381,78 +1381,70 @@
             }
         }
 
-        // --- 5. 분할매매 관망구간 완전 탐색 로직 ---
-        function openSplitTradeOptimizer() {
+        // --- 5. 커스텀 분할매매 계산기 로직 ---
+        let splitCalcChartInstance = null;
+
+        function addConditionRow(disp = '', op = 'gte', ratio = '') {
+            const container = document.getElementById('conditions-container');
+            const row = document.createElement('div');
+            row.className = 'condition-row';
+            row.style.cssText = 'display:flex; flex-wrap:wrap; gap:10px; align-items:center; background:#fff; padding:10px; border-radius:6px; border:1px solid #ddd; justify-content:center;';
+            
+            row.innerHTML = `
+                <div style="display:flex; align-items:center; gap:5px;">
+                    <strong>이격도:</strong> 
+                    <input type="number" step="0.01" value="${disp}" class="cond-disp" placeholder="예: 3.5" style="width:80px; padding:4px; border:1px solid #ccc; border-radius:4px;">
+                </div>
+                <div style="display:flex; align-items:center; gap:5px;">
+                    <strong>범위:</strong> 
+                    <select class="cond-op" style="padding:4px; border:1px solid #ccc; border-radius:4px;">
+                        <option value="gte" ${op === 'gte' ? 'selected' : ''}>이상</option>
+                        <option value="lte" ${op === 'lte' ? 'selected' : ''}>이하</option>
+                    </select>
+                </div>
+                <div style="display:flex; align-items:center; gap:5px;">
+                    <strong>적용사항(주식비율):</strong> 
+                    <input type="number" step="0.01" min="0" max="1" value="${ratio}" class="cond-ratio" placeholder="0 ~ 1" style="width:70px; padding:4px; border:1px solid #ccc; border-radius:4px;">
+                </div>
+                <button class="btn btn-reset" style="padding:4px 10px; margin:0 0 0 auto; background:#e74c3c; border-radius:4px;" onclick="this.parentElement.remove()">❌ 삭제</button>
+            `;
+            container.appendChild(row);
+        }
+
+        function openSplitCalculator() {
             if (!cachedData) return alert('먼저 데이터를 불러와주세요.');
             
-            const period = parseInt(document.getElementById('ma-period').value) || 1500;
-            const N = cachedData.prices.length;
-            let sum = 0, validCount = 0;
-            let minD = 9999, maxD = -9999;
-
-            for (let i = 0; i < N; i++) {
-                let p = cachedData.prices[i];
-                sum += p;
-                if (i >= period) sum -= cachedData.prices[i - period];
-                if (i >= period - 1) {
-                    let avg = sum / period;
-                    if (avg > 0) {
-                        let d = p / avg;
-                        if (Number.isFinite(d)) {
-                            validCount++;
-                            if (d < minD) minD = d;
-                            if (d > maxD) maxD = d;
-                        }
-                    }
-                }
+            const container = document.getElementById('conditions-container');
+            
+            // 모달을 처음 열 때 기본 예시 조건 2개를 세팅해줍니다.
+            if (container.children.length === 0) {
+                addConditionRow(3.5, 'gte', 0.4);
+                addConditionRow(2.0, 'lte', 1.0);
             }
 
-            if (validCount < 10) return alert("데이터가 너무 적어 최적화할 수 없습니다.");
-            if (minD === maxD) return alert("이격도 변화가 없어 최적화가 불가능합니다.");
-
-            window.splitMinD = minD;
-            window.splitMaxD = maxD;
-            document.getElementById('split-start-d').value = Math.floor(minD * 1000) / 1000;
-            document.getElementById('split-end-d').value = Math.ceil(maxD * 1000) / 1000;
-
-            document.getElementById('split-setup-panel').style.display = 'block';
             document.getElementById('split-result-panel').style.display = 'none';
-            document.getElementById('split-reset-zoom-btn').style.display = 'none';
-            if (splitTradeChartInstance) {
-                splitTradeChartInstance.destroy();
-                splitTradeChartInstance = null;
+            document.getElementById('split-calc-reset-btn').style.display = 'none';
+            
+            openModal('split-calc-modal');
+        }
+
+        function runSplitCalculation() {
+            const rows = document.querySelectorAll('.condition-row');
+            if (rows.length === 0) return alert("최소 1개의 조건을 추가해주세요.");
+
+            // 사용자가 입력한 조건 파싱
+            let conditions = [];
+            for (let row of rows) {
+                let disp = parseFloat(row.querySelector('.cond-disp').value);
+                let op = row.querySelector('.cond-op').value;
+                let ratio = parseFloat(row.querySelector('.cond-ratio').value);
+
+                if (isNaN(disp) || isNaN(ratio) || ratio < 0 || ratio > 1) {
+                    return alert("이격도와 적용사항(0~1 비율)을 모든 칸에 정확한 숫자로 입력해주세요.");
+                }
+                conditions.push({ disp, isGreater: op === 'gte', ratio });
             }
 
-            openModal('split-trade-modal');
-        }
-
-        function startSplitTradeCalculation() {
-            let userStartD = parseFloat(document.getElementById('split-start-d').value);
-            let userEndD = parseFloat(document.getElementById('split-end-d').value);
-            const modeStr = document.getElementById('split-mode-select').value;
-            
-            if(isNaN(userStartD) || isNaN(userEndD)) return alert("시작 점과 끝 점을 정확히 입력해주세요.");
-            if(userStartD >= userEndD) return alert("시작 점 이격도는 끝 점 이격도보다 반드시 작아야 합니다.");
-            
-            if (userStartD < window.splitMinD) userStartD = window.splitMinD;
-            if (userEndD > window.splitMaxD) userEndD = window.splitMaxD;
-
-            const parts = modeStr.split('_');
-            const B = parseInt(parts[0]);
-            const gap = parseFloat(parts[1]);
-
-            document.getElementById('split-setup-panel').style.display = 'none';
-            document.getElementById('split-result-panel').style.display = 'block';
-            document.getElementById('split-trade-result-text').innerHTML = 
-                `경우의 수를 100% 완전 탐색 중입니다. 브라우저가 잠시 멈출 수 있습니다...<br><br>` +
-                `<span style="color:#7f8c8d; font-size:14px;">(선택 옵션: ${B}구간 / ${gap}갭 / 관망구간 전체의 40~80% 길이 탐색)</span>`;
-
-            setTimeout(() => { 
-                runSplitTradeOptimization(userStartD, userEndD, B, gap); 
-            }, 150);
-        }
-
-        function runSplitTradeOptimization(startD, endD, B, gap) {
             const period = parseInt(document.getElementById('ma-period').value) || 1500;
             const initCap = parseFloat(document.getElementById('initial-cap').value) || 10000;
             const N = cachedData.prices.length;
@@ -1465,216 +1457,142 @@
                 if (i >= period) sum -= cachedData.prices[i - period];
                 if (i >= period - 1) {
                     let avg = sum / period;
-                    if (avg > 0) {
-                        let d = p / avg;
-                        if (Number.isFinite(d)) disparities[i] = d;
-                    }
+                    if (avg > 0) disparities[i] = p / avg;
                 }
             }
 
             let firstValidIdx = disparities.findIndex(d => d !== null);
-            if (firstValidIdx === -1) firstValidIdx = 0;
-
-            const numDrops = Math.round(1.0 / gap);
-
-            // JIT 연산속도 극대화를 위해 버킷 인덱스를 +1 시프트하여 배열화 (분기문 제거용)
-            let mappedIdx = new Int32Array(N).fill(-1);
-            for(let i = firstValidIdx; i < N; i++){
-                let d = disparities[i];
-                if (d === null) continue;
-                if (d <= startD) mappedIdx[i] = 0;
-                else if (d >= endD) mappedIdx[i] = B + 1;
-                else {
-                    let bIdx = Math.floor((d - startD) / (endD - startD) * B);
-                    if (bIdx >= B) bIdx = B - 1;
-                    mappedIdx[i] = bIdx + 1;
-                }
-            }
-
-            let bestFinalCap = -1;
-            let bestSeq = new Int32Array(numDrops).fill(0);
-            let bestS = -1;
-            let bestH = -1;
-            let iterations = 0;
+            if (firstValidIdx === -1) return alert("데이터가 부족하여 계산을 수행할 수 없습니다.");
 
             const prices = cachedData.prices;
-            // 이격도 발생 첫 지점 전액 매수 세팅
-            const initialShares = initCap / prices[firstValidIdx];
-            const lastPrice = prices[N - 1];
+            let cash = 0.0;
+            let shares = initCap / prices[firstValidIdx]; // 이격도 발생 첫날 전액 매수한 상태로 세팅
 
-            let currentSeq = new Int32Array(numDrops).fill(0);
-            let targetRatioMap = new Float64Array(B + 2);
-            targetRatioMap[0] = 1.0;
-            targetRatioMap[B + 1] = 0.0;
+            let capitalHistory = new Array(N).fill(null);
 
-            // 관망구간(Hold Zone) H는 전체 구간의 2/5(40%) 부터 4/5(80%) 범위에서 탐색
-            let H_min = Math.floor(B * 2 / 5);
-            let H_max = Math.floor(B * 4 / 5);
+            // 조건식 시뮬레이션 엔진 
+            for (let i = firstValidIdx; i < N; i++) {
+                let d = disparities[i];
+                let p = prices[i];
 
-            for (let H = H_min; H <= H_max; H++) {
-                // 시작점 S의 배치 가능한 위치 반복 (0 부터 B - H 까지)
-                for (let S = 0; S <= B - H; S++) {
-                    const H_start = S + 1; // 시프트 보정
-                    const H_end = S + 1 + H;
-                    
-                    // DFS로 하락점(numDrops) 조합 도출
-                    function searchDrops(dropIdx, startAvail) {
-                        if (dropIdx === numDrops) {
-                            // 조합 완성 시, 관망구간을 우회하여 하락점 인덱스를 실제 맵핑
-                            let mappedSeq = new Int32Array(numDrops);
-                            for(let i=0; i<numDrops; i++) {
-                                mappedSeq[i] = currentSeq[i] < S ? currentSeq[i] : currentSeq[i] + H;
-                            }
-                            
-                            // 각 구간별 목표 비율 테이블 생성
-                            for(let b=0; b<B; b++) {
-                                let dCnt = 0;
-                                while(dCnt < numDrops && b >= mappedSeq[dCnt]) dCnt++;
-                                targetRatioMap[b + 1] = 1.0 - dCnt * gap;
-                            }
-
-                            let cash = 0.0;
-                            let shares = initialShares;
-
-                            // 수백만 번 돌아가는 핫 루프 (분기문을 완전히 제거하여 빛의 속도로 연산)
-                            for (let k = firstValidIdx; k < N; k++) {
-                                let idx = mappedIdx[k];
-                                if (idx === -1) continue;
-                                
-                                // ★ 핵심: 관망구간(Hold Zone) 내에 위치하면 아무것도 하지 않음(사지도 팔지도 않음)
-                                if (idx >= H_start && idx < H_end) continue;
-
-                                let p = prices[k];
-                                let targetRatio = targetRatioMap[idx];
-                                let diff = (cash + shares * p) * targetRatio - shares * p;
-
-                                if (diff > 0) {
-                                    let buyAmount = cash < diff ? cash : diff;
-                                    shares += buyAmount / p;
-                                    cash -= buyAmount;
-                                } else if (diff < 0) {
-                                    let sellShares = shares < -diff / p ? shares : -diff / p;
-                                    shares -= sellShares;
-                                    cash += sellShares * p;
-                                }
-                            }
-
-                            let cap = cash + shares * lastPrice;
-                            if (cap > bestFinalCap) {
-                                bestFinalCap = cap;
-                                for(let x=0; x<numDrops; x++) bestSeq[x] = mappedSeq[x];
-                                bestS = S;
-                                bestH = H;
-                            }
-                            iterations++;
-                            return;
-                        }
-                        
-                        // 하락점 배치 (중복 허용, 우하향 단조감소 유지)
-                        for (let b = startAvail; b < B - H; b++) {
-                            currentSeq[dropIdx] = b;
-                            searchDrops(dropIdx + 1, b);
-                        }
-                    }
-                    searchDrops(0, 0);
-                }
-            }
-
-            // 최적 결과 차트 레이아웃 구성
-            let curveX = [];
-            let curveY = [];
-
-            if (window.splitMinD < startD) {
-                curveX.push(window.splitMinD.toFixed(3));
-                curveY.push(100);
-            }
-
-            for (let b = 0; b < B; b++) {
-                let x = startD + (endD - startD) * b / B;
-                curveX.push(x.toFixed(3));
+                let targetRatio = -1; // -1은 조건 미해당(관망)을 의미함
                 
-                let sIdx = 0;
-                while(sIdx < numDrops && b >= bestSeq[sIdx]) sIdx++;
-                curveY.push(Math.round((1.0 - sIdx * gap) * 100));
+                // 등록된 조건을 위에서부터 순서대로 검사 (첫 번째로 부합하는 조건이 당첨됨)
+                for (let cond of conditions) {
+                    if (cond.isGreater && d >= cond.disp) {
+                        targetRatio = cond.ratio; break;
+                    } else if (!cond.isGreater && d <= cond.disp) {
+                        targetRatio = cond.ratio; break;
+                    }
+                }
+
+                // 해당되는 조건이 있을 경우에만 리밸런싱 실행
+                if (targetRatio !== -1) {
+                    let currentAsset = cash + shares * p;
+                    let targetStockValue = currentAsset * targetRatio;
+                    let currentStockValue = shares * p;
+                    let diff = targetStockValue - currentStockValue;
+
+                    if (diff > 0) { 
+                        let buyAmount = Math.min(cash, diff);
+                        shares += buyAmount / p;
+                        cash -= buyAmount;
+                    } else if (diff < 0) { 
+                        let sellShares = Math.min(shares, -diff / p);
+                        shares -= sellShares;
+                        cash += sellShares * p;
+                    }
+                }
+                capitalHistory[i] = cash + shares * p;
             }
 
-            curveX.push(endD.toFixed(3));
-            curveY.push(0);
+            let finalCash = cash;
+            let finalStock = shares * prices[N - 1];
+            let finalCap = finalCash + finalStock;
 
-            if (window.splitMaxD > endD) {
-                curveX.push(window.splitMaxD.toFixed(3));
-                curveY.push(0);
-            }
+            // 시뮬레이션 결과 표출
+            document.getElementById('res-cash').innerText = finalCash.toLocaleString(undefined, {maximumFractionDigits:2});
+            document.getElementById('res-stock').innerText = finalStock.toLocaleString(undefined, {maximumFractionDigits:2});
+            document.getElementById('res-total').innerText = finalCap.toLocaleString(undefined, {maximumFractionDigits:2});
 
-            // 관망구간 시작과 끝의 텍스트 라벨 (플러그인에서 좌표 추적용)
-            let bestS_X = (startD + (endD - startD) * bestS / B).toFixed(3);
-            let bestE_X = (startD + (endD - startD) * (bestS + bestH) / B).toFixed(3);
+            // 차트 렌더링용 배열 자르기 (이격도 발생일 이후 데이터만)
+            let chartDates = cachedData.dates.slice(firstValidIdx);
+            let chartPrices = prices.slice(firstValidIdx);
+            let chartCaps = capitalHistory.slice(firstValidIdx);
 
-            const ctx = document.getElementById('splitTradeChart').getContext('2d');
-            if (splitTradeChartInstance) splitTradeChartInstance.destroy();
+            const ctx = document.getElementById('splitCalcChart').getContext('2d');
+            if (splitCalcChartInstance) splitCalcChartInstance.destroy();
 
-            splitTradeChartInstance = new Chart(ctx, {
+            // 종가와 총자산을 모두 추적할 수 있는 듀얼(좌/우) 로그 스케일 차트 생성
+            splitCalcChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: curveX,
-                    datasets: [{
-                        label: '최적 목표 주식 비율 (%)',
-                        data: curveY,
-                        borderColor: '#8e44ad',
-                        backgroundColor: 'rgba(142, 68, 173, 0.1)',
-                        borderWidth: 3,
-                        pointRadius: 3, 
-                        pointBackgroundColor: '#8e44ad',
-                        fill: false,
-                        stepped: true
-                    }]
+                    labels: chartDates,
+                    datasets: [
+                        {
+                            label: '종가 (좌측축)',
+                            data: chartPrices,
+                            borderColor: '#3498db',
+                            backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            yAxisID: 'y',
+                            order: 2
+                        },
+                        {
+                            label: '총 자산 (우측축)',
+                            data: chartCaps,
+                            borderColor: '#d35400',
+                            backgroundColor: 'rgba(211, 84, 0, 0.1)',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            yAxisID: 'y1',
+                            order: 1
+                        }
+                    ]
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
                     plugins: { 
                         zoom: zoomPluginX,
                         tooltip: {
-                            callbacks: { label: function(context) { return `목표 주식 비율: ${context.parsed.y}%`; } }
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) label += ': ';
+                                    if (context.parsed.y !== null) {
+                                        label += context.parsed.y.toLocaleString(undefined, {maximumFractionDigits: 2});
+                                    }
+                                    return label;
+                                }
+                            }
                         }
                     },
                     scales: {
                         x: { 
-                            title: { display: true, text: '이격도 (x) - 회색 배경은 관망(Hold) 구역입니다.' },
-                            ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 11 }
+                            grid: getYearlyGridConfig(), 
+                            ticks: getYearlyTicksConfig() 
                         },
                         y: { 
-                            title: { display: true, text: '주식 비율 (%)' }, 
-                            min: 0, max: 100 
+                            type: 'logarithmic', 
+                            display: true, 
+                            position: 'left', 
+                            title: { display: true, text: '종가 (로그)', color: '#3498db' } 
+                        },
+                        y1: { 
+                            type: 'logarithmic', 
+                            display: true, 
+                            position: 'right', 
+                            title: { display: true, text: '총 자산 (로그)', color: '#d35400' },
+                            grid: { drawOnChartArea: false } // 오른쪽 보조축의 그리드선은 숨겨서 깔끔하게 유지
                         }
                     }
-                },
-                // 차트 위에 회색 관망구간을 그려주는 커스텀 플러그인 탑재
-                plugins: [{
-                    id: 'holdZoneBg',
-                    beforeDraw: (chart) => {
-                        const ctx = chart.ctx;
-                        const xAxis = chart.scales.x;
-                        const yAxis = chart.scales.y;
-                        
-                        let startIndex = chart.data.labels.indexOf(bestS_X);
-                        let endIndex = chart.data.labels.indexOf(bestE_X);
-
-                        if (startIndex !== -1 && endIndex !== -1) {
-                            let startPx = xAxis.getPixelForTick(startIndex);
-                            let endPx = xAxis.getPixelForTick(endIndex);
-                            ctx.save();
-                            ctx.fillStyle = 'rgba(149, 165, 166, 0.3)'; // 반투명 회색
-                            ctx.fillRect(startPx, yAxis.top, endPx - startPx, yAxis.bottom - yAxis.top);
-                            ctx.restore();
-                        }
-                    }
-                }]
+                }
             });
 
-            document.getElementById('split-reset-zoom-btn').style.display = 'inline-block';
-            document.getElementById('split-trade-result-text').innerHTML =
-                `<span style="color:#2c3e50; font-size: 15px;">총 ${iterations.toLocaleString()}가지의 조합을 확인하여 최적의 밸런스와 관망구간을 찾았습니다.</span><br><br>` +
-                `최적 예상 최종 자산: <span style="color:#d35400; font-size:24px;">${bestFinalCap.toLocaleString(undefined, {maximumFractionDigits:2})}</span>`;
+            document.getElementById('split-result-panel').style.display = 'block';
+            document.getElementById('split-calc-reset-btn').style.display = 'inline-block';
         }
 
         window.onload = handleRenderClick;
