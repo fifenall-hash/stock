@@ -34,7 +34,7 @@
         canvas {
             touch-action: pan-y !important; /* 위아래 스크롤 허용, 좌우는 차트 이동 */
         }
-        #scatterChart, #tradeOptimizerChart, #splitTradeChart {
+        #scatterChart, #tradeOptimizerChart, #splitCalcChart {
             touch-action: none !important; 
         }
 
@@ -315,45 +315,42 @@
         </div>
     </div>
 
-    <!-- 5. 분할매매 최적화 모달창 -->
-    <div id="split-trade-modal" class="modal-overlay">
-        <div class="modal-content">
-            <h2 style="font-size: 18px; margin-top: 0; color:#8e44ad;">📉 분할매매 완전탐색 최적화 보기</h2>
+    <!-- 5. 분할매매 계산기 모달창 -->
+    <div id="split-calc-modal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 1000px;">
+            <h2 style="font-size: 18px; margin-top: 0; color:#8e44ad;">📉 커스텀 분할매매 계산기</h2>
             
             <div id="split-setup-panel" style="background:#f1f2f6; padding:15px; border-radius:8px; margin-bottom:15px; text-align:left; font-size:14px;">
-                <div style="margin-bottom:10px;">
-                    <strong>탐색 해상도 모드:</strong>
-                    <select id="split-mode-select" style="padding:4px; border-radius:4px; border:1px solid #ced4da; margin-left:10px; font-family:inherit;">
-                        <option value="33_0.2">33구간 & 0.2갭 (약 316만 조합, 1~3초 소요)</option>
-                        <option value="18_0.1">18구간 & 0.1갭 (약 353만 조합, 1~3초 소요)</option>
-                        <option value="11_0.05">11구간 & 0.05갭 (약 236만 조합, 1~3초 소요)</option>
-                    </select>
+                <div style="margin-bottom:10px; color:#7f8c8d; font-size:13px;">
+                    ※ 조건은 <strong>위에서부터 아래로 순서대로(우선순위)</strong> 적용됩니다.<br>
+                    ※ 해당하는 조건이 없을 경우 매매를 하지 않고 <strong>기존 보유량을 그대로 유지(관망)</strong>합니다.
                 </div>
-                <div style="display:flex; gap:15px; flex-wrap:wrap; align-items:center;">
-                    <div>
-                        <strong>시작 점 이격도 (100% 매수):</strong>
-                        <input type="number" id="split-start-d" step="0.01" style="width:70px; padding:4px; margin-left:5px; border:1px solid #ced4da; border-radius:4px;">
-                    </div>
-                    <div>
-                        <strong>끝 점 이격도 (0% 매수):</strong>
-                        <input type="number" id="split-end-d" step="0.01" style="width:70px; padding:4px; margin-left:5px; border:1px solid #ced4da; border-radius:4px;">
-                    </div>
+                <div id="conditions-container" style="display:flex; flex-direction:column; gap:10px;">
+                    <!-- JS를 통해 조건 입력창이 동적으로 추가됩니다 -->
                 </div>
-                <div style="text-align:center; margin-top:15px;">
-                    <button class="btn btn-split" style="font-weight:bold;" onclick="startSplitTradeCalculation()">🚀 선택한 조건으로 연산 시작</button>
+                <div style="margin-top:15px; display:flex; justify-content:center; gap:10px;">
+                    <button class="btn btn-info" style="margin:0; padding:8px 16px; font-weight:bold;" onclick="addConditionRow()">➕ 조건 추가</button>
+                    <button class="btn btn-split" style="margin:0; padding:8px 16px; font-weight:bold;" onclick="runSplitCalculation()">🚀 계산하기</button>
                 </div>
             </div>
 
-            <div id="split-result-panel" style="display:none;">
-                <div class="opt-chart-container">
-                    <canvas id="splitTradeChart"></canvas>
+            <div id="split-result-panel" style="display:none; text-align:center;">
+                <div style="background:#e8f4f8; padding:15px; border-radius:8px; margin-bottom:15px; border:1px solid #bce8f1;">
+                    <h3 style="margin:0 0 10px 0; color:#2c3e50; font-size:16px;">최종 자산 현황</h3>
+                    <div style="display:flex; justify-content:space-around; flex-wrap:wrap; gap:10px;">
+                        <div><span style="color:#7f8c8d;">보유 현금:</span> <strong id="res-cash" style="color:#2c3e50; font-size:18px;">-</strong></div>
+                        <div><span style="color:#7f8c8d;">주식 평가액:</span> <strong id="res-stock" style="color:#8e44ad; font-size:18px;">-</strong></div>
+                        <div><span style="color:#7f8c8d;">총 자산:</span> <strong id="res-total" style="color:#d35400; font-size:22px;">-</strong></div>
+                    </div>
                 </div>
-                <p id="split-trade-result-text" style="font-size:16px; font-weight:bold; margin:15px 0;">연산 중입니다...</p>
+                <div class="opt-chart-container" style="height: 40vh; min-height: 350px;">
+                    <canvas id="splitCalcChart"></canvas>
+                </div>
             </div>
 
             <div class="modal-actions">
-                <button id="split-reset-zoom-btn" class="btn btn-reset" style="display:none; margin:0;" onclick="resetChartZoom(splitTradeChartInstance)">🔍 줌 초기화</button>
-                <button class="btn" style="margin:0;" onclick="closeModal('split-trade-modal')">닫기</button>
+                <button id="split-calc-reset-btn" class="btn btn-reset" style="display:none; margin:0;" onclick="resetChartZoom(splitCalcChartInstance)">🔍 줌 초기화</button>
+                <button class="btn" style="margin:0;" onclick="closeModal('split-calc-modal')">닫기</button>
             </div>
         </div>
     </div>
@@ -387,7 +384,7 @@
             <div class="btn-group" style="margin-top: 5px;">
                 <button class="btn btn-trade-opt" onclick="openTradeOptimizer()">📊 매수/매도 최적화</button>
                 <button class="btn btn-optimize" onclick="openOptimizer()">💡 기준일수 최적화 (R²)</button>
-                <button class="btn btn-split" onclick="openSplitTradeOptimizer()">📉 분할매매 최적화 보기</button>
+                <button class="btn btn-split" onclick="openSplitCalculator()">📉 분할매매 계산기</button>
             </div>
             <div class="btn-group" style="margin-top: 5px;">
                 <button class="btn btn-info" onclick="openTimeseriesModal()">📅 이격도 vs 물림일수</button>
@@ -456,7 +453,6 @@
         let tradeOptChartInstance = null;
         let timeseriesChartInstance = null;
         let scatterChartInstance = null;
-        let splitTradeChartInstance = null;
         
         let bestOptimizedPeriod = 1500;
         let bestOptimizedBuy = 1.5;
