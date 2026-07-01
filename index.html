@@ -1327,13 +1327,13 @@
                         if (elements.length > 0) {
                             const idx = elements[0].index;
                             const item = results[idx];
-                            window.selectedPointFromChart = { buy: item.buy, sell: item.x };
+                            window.selectedPointFromChart = { buy: item.buy, sell: item.sell };
                             document.getElementById('custom-apply-btn').disabled = false;
                             
                             document.getElementById('trade-opt-result-text').innerHTML = 
                                 `최고 효율 매수: <span style="color:#27ae60;">${bestBuy}x</span> 이하 / 매도: <span style="color:#e74c3c;">${bestSell}x</span> 이상<br>`+
                                 `이때의 예상 최고 자본: <span style="color:#d35400;">${maxFinalCapital.toLocaleString(undefined, {maximumFractionDigits:2})}</span><br><br>`+
-                                `<span style="color:#2980b9; font-size:15px; font-weight:bold;">[선택된 타점] 매수: ${item.buy}x / 매도: ${item.x}x (최종자본: ${item.v.toLocaleString(undefined, {maximumFractionDigits:2})})</span>`;
+                                `<span style="color:#2980b9; font-size:15px; font-weight:bold;">[선택된 타점] 매수: ${item.buy.toFixed(2)}x / 매도: ${item.sell.toFixed(2)}x (최종자본: ${item.v.toLocaleString(undefined, {maximumFractionDigits:2})})</span>`;
                         }
                     },
                     plugins: {
