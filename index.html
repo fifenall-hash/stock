@@ -528,12 +528,16 @@
             const currentUnixTime = Math.floor(Date.now() / 1000); 
 
             // 2. range=max 대신 period1과 period2를 명시하여 타겟 URL 생성 (강제 압축 우회)
-            const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?period1=0&period2=${currentUnixTime}&interval=1d`;
+            const targetUrl1 = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?period1=0&period2=${currentUnixTime}&interval=1d&events=history`;
+            const targetUrl2 = `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?period1=0&period2=${currentUnixTime}&interval=1d&events=history`;
 
             const proxyList = [
-                `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
-                `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
-                `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
+                `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl1)}`,
+                `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl1)}`,
+                `https://corsproxy.io/?${encodeURIComponent(targetUrl1)}`,
+                `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl2)}`,
+                `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl2)}`,
+                `https://thingproxy.freeboard.io/fetch/${targetUrl1}`
             ];
 
             try {
@@ -542,13 +546,23 @@
                     try {
                         const response = await fetch(proxy, { method: 'GET', headers: { 'Accept': 'application/json' }});
                         if (response.ok) {
-                            const data = await response.json();
-                            if (data && data.chart && data.chart.result) { dataFetched = data; break; }
+                            const textData = await response.text();
+                            try {
+                                const data = JSON.parse(textData);
+                                if (data && data.chart && data.chart.result) { 
+                                    dataFetched = data; 
+                                    break; 
+                                }
+                            } catch (parseError) {
+                                console.warn(`JSON Parse failed for proxy:`, proxy);
+                            }
+                        } else {
+                            console.warn(`Proxy returned HTTP ${response.status}:`, proxy);
                         }
-                    } catch (error) { console.warn(`Proxy fail:`, error); }
+                    } catch (error) { console.warn(`Proxy fail:`, proxy, error); }
                 }
 
-                if (!dataFetched) throw new Error('데이터 로드 실패');
+                if (!dataFetched) throw new Error('모든 프록시 서버에서 데이터 로드 실패');
 
                 const result = dataFetched.chart.result[0];
                 const meta = result.meta;
