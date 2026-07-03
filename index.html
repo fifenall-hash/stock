@@ -413,15 +413,15 @@
             <button class="btn btn-download" style="margin-top:0;" onclick="downloadCSV()">⬇️ 데이터 표 다운로드 (.csv)</button>
         </div>
 
-        <!-- 표 영역 (현금, 주식평가액 컬럼 추가) -->
+        <!-- 표 영역 -->
         <div id="table-container" style="display:block; width:100%; overflow-x:auto; margin-top:15px;">
             <table id="data-table">
                 <thead>
                     <tr>
                         <th>날짜</th>
                         <th>수정종가</th>
-                        <th>N일 이평선</th>
-                        <th>N일 이격도</th>
+                        <th>이평선</th>
+                        <th>이격도</th>
                         <th>물림일수(일)</th>
                         <th>매매 상태</th>
                         <th>보유 현금</th>
@@ -681,11 +681,18 @@
                 tradeActions[i] = "시뮬레이션 대기";
             }
 
-            tradeActions[firstValidIdx] = "초기 보유 시작"; // 최초 지점에 전액 매수 마킹
+            let daysSinceLastAction = 0;
+            let lastActionType = "매수"; // 초기 보유는 매수로 간주
 
             for (let i = firstValidIdx; i < N; i++) {
                 let d = disparityData[i];
                 let p = cachedData.prices[i];
+                let actionOccurred = false;
+
+                if (i === firstValidIdx) {
+                    tradeActions[i] = "초기 보유 시작";
+                    actionOccurred = true;
+                }
                 
                 // 이격도가 존재하는 시점부터 최적화 조건 판단 시작
                 if (d !== null) {
@@ -694,13 +701,26 @@
                         shares = 0;
                         isHolding = false;
                         tradeActions[i] = "매도 (Sell)";
+                        lastActionType = "매도";
+                        daysSinceLastAction = 0;
+                        actionOccurred = true;
                     } else if (!isHolding && d < buyPoint && cash > 0) {
                         shares = cash / p;
                         cash = 0;
                         isHolding = true;
                         tradeActions[i] = "매수 (Buy)";
+                        lastActionType = "매수";
+                        daysSinceLastAction = 0;
+                        actionOccurred = true;
                     }
                 }
+
+                // 매수/매도 액션이 일어나지 않은 날짜는 관망일수 누적
+                if (!actionOccurred) {
+                    daysSinceLastAction++;
+                    tradeActions[i] = `${lastActionType} 후 관망 (${daysSinceLastAction}일차)`;
+                }
+
                 cashHistory[i] = cash;
                 stockHistory[i] = shares * p;
                 capitalHistory[i] = cash + (shares * p);
@@ -994,9 +1014,15 @@
                 const disparity = disparityData[i] !== null ? disparityData[i].toFixed(4) : '-';
                 const mulrim = displayMulrimData[i]; 
                 const action = tradeActions[i];
+                
                 let actionStyle = '';
-                if(action.includes("매수")) actionStyle = 'color:#27ae60; font-weight:bold;';
-                else if(action.includes("매도")) actionStyle = 'color:#e74c3c; font-weight:bold;';
+                if (action === "매수 (Buy)" || action === "초기 보유 시작") {
+                    actionStyle = 'color:#27ae60; font-weight:bold;';
+                } else if (action === "매도 (Sell)") {
+                    actionStyle = 'color:#e74c3c; font-weight:bold;';
+                } else if (action.includes("관망")) {
+                    actionStyle = 'color:#7f8c8d; font-size:12px;';
+                }
                 
                 // 표에 보여질 데이터 포맷팅
                 const cashVal = cashHistory[i] !== null ? cashHistory[i].toFixed(2) : '-';
@@ -1021,7 +1047,7 @@
             }
 
             let csvContent = "\uFEFF"; 
-            csvContent += "날짜,수정종가,N일 이평선,N일 이격도,물림일수(일),매매 상태,보유 현금,주식 평가액,총 자산\n";
+            csvContent += "날짜,수정종가,이평선,이격도,물림일수(일),매매 상태,보유 현금,주식 평가액,총 자산\n";
             
             // 표에 보이는 순서(최신순)와 동일하게 역순 기록. 선택한 시작점까지만 추출
             for (let i = dates.length - 1; i >= startIndex; i--) {
