@@ -681,7 +681,7 @@
                 tradeActions[i] = "시뮬레이션 대기";
             }
 
-            let daysSinceLastAction = 0;
+            let lastActionDateObj = new Date(cachedData.dates[firstValidIdx]);
             let lastActionType = "매수"; // 초기 보유는 매수로 간주
 
             for (let i = firstValidIdx; i < N; i++) {
@@ -692,6 +692,7 @@
                 if (i === firstValidIdx) {
                     tradeActions[i] = "초기 보유 시작";
                     actionOccurred = true;
+                    lastActionDateObj = new Date(cachedData.dates[i]);
                 }
                 
                 // 이격도가 존재하는 시점부터 최적화 조건 판단 시작
@@ -702,7 +703,7 @@
                         isHolding = false;
                         tradeActions[i] = "매도 (Sell)";
                         lastActionType = "매도";
-                        daysSinceLastAction = 0;
+                        lastActionDateObj = new Date(cachedData.dates[i]);
                         actionOccurred = true;
                     } else if (!isHolding && d < buyPoint && cash > 0) {
                         shares = cash / p;
@@ -710,15 +711,23 @@
                         isHolding = true;
                         tradeActions[i] = "매수 (Buy)";
                         lastActionType = "매수";
-                        daysSinceLastAction = 0;
+                        lastActionDateObj = new Date(cachedData.dates[i]);
                         actionOccurred = true;
                     }
                 }
 
-                // 매수/매도 액션이 일어나지 않은 날짜는 관망일수 누적
+                // 매수/매도 액션이 일어나지 않은 날짜는 관망일수 누적 (달력 날짜 기준)
                 if (!actionOccurred) {
-                    daysSinceLastAction++;
-                    tradeActions[i] = `${lastActionType} 후 관망 (${daysSinceLastAction}일차)`;
+                    const currentDt = new Date(cachedData.dates[i]);
+                    const diffTime = Math.abs(currentDt - lastActionDateObj);
+                    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+                    
+                    if (diffDays >= 365) {
+                        const diffYears = (diffDays / 365.2425).toFixed(2);
+                        tradeActions[i] = `${lastActionType} 후 관망 (${diffYears}년차)`;
+                    } else {
+                        tradeActions[i] = `${lastActionType} 후 관망 (${diffDays}일차)`;
+                    }
                 }
 
                 cashHistory[i] = cash;
