@@ -10,7 +10,6 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Stock Analytics">
 
-    <!-- Chart.js 및 Zoom 플러그인 로드 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
@@ -252,7 +251,6 @@
 
     <div id="loading">데이터를 불러오는 중입니다...</div>
 
-    <!-- 1. 이격도 기준일수 최적화 모달창 -->
     <div id="optimizer-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 style="font-size: 18px; margin-top: 0;">📈 기준일수 최적화 분석기 (R² 기반)</h2>
@@ -268,7 +266,6 @@
         </div>
     </div>
 
-    <!-- 2. 매수/매도 최적화 모달창 -->
     <div id="trade-optimizer-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 style="font-size: 18px; margin-top: 0; color:#d35400;">📊 매수/매도 타점 최적화</h2>
@@ -285,7 +282,6 @@
         </div>
     </div>
 
-    <!-- 3. 시간흐름 비교 모달창 -->
     <div id="timeseries-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 style="font-size: 18px; margin-top: 0; color:#2c3e50;">📅 날짜별 이격도 & 물림일수 추이</h2>
@@ -299,7 +295,6 @@
         </div>
     </div>
 
-    <!-- 4. 산점도 모달창 -->
     <div id="scatter-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 style="font-size: 18px; margin-top: 0; color:#2c3e50;">📈 상관관계 산점도 및 추세선</h2>
@@ -313,7 +308,6 @@
         </div>
     </div>
 
-    <!-- 5. 분할매매 계산기 모달창 -->
     <div id="split-calc-modal" class="modal-overlay">
         <div class="modal-content" style="max-width: 1000px;">
             <h2 style="font-size: 18px; margin-top: 0; color:#8e44ad;">📉 커스텀 분할매매 계산기</h2>
@@ -324,8 +318,7 @@
                     ※ 해당하는 조건이 없을 경우 매매를 하지 않고 <strong>기존 보유량을 그대로 유지(관망)</strong>합니다.
                 </div>
                 <div id="conditions-container" style="display:flex; flex-direction:column; gap:10px;">
-                    <!-- JS를 통해 조건 입력창이 동적으로 추가됩니다 -->
-                </div>
+                    </div>
                 <div style="margin-top:15px; display:flex; justify-content:center; gap:10px;">
                     <button class="btn btn-info" style="margin:0; padding:8px 16px; font-weight:bold;" onclick="addConditionRow()">➕ 조건 추가</button>
                     <button class="btn btn-split" style="margin:0; padding:8px 16px; font-weight:bold;" onclick="runSplitCalculation()">🚀 계산하기</button>
@@ -353,7 +346,6 @@
         </div>
     </div>
 
-    <!-- 6. 이격도 분포도 및 누적확률 모달창 -->
     <div id="dist-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 style="font-size: 18px; margin-top: 0; color:#2c3e50;">📊 이격도 확률 분포도 (실제 vs 정규분포)</h2>
@@ -419,7 +411,6 @@
             </div>
         </div>
 
-        <!-- 분리된 패널 -->
         <div id="simulation-panel" class="simulation-panel"></div>
         <div id="evaluation-panel" class="evaluation-panel"></div>
         
@@ -439,7 +430,6 @@
             <button class="btn btn-download" style="margin-top:0;" onclick="downloadCSV()">⬇️ 데이터 표 다운로드 (.csv)</button>
         </div>
 
-        <!-- 표 영역 -->
         <div id="table-container" style="display:block; width:100%; overflow-x:auto; margin-top:15px;">
             <table id="data-table">
                 <thead>
@@ -898,11 +888,13 @@
                 let utility = baseCagr !== 0 ? (cagr / baseCagr - 1) * 100 : 0;
                 let multiple = baseFinalCapital !== 0 ? (finalCapital / baseFinalCapital) : 1;
 
+                // 시뮬레이션 결과 텍스트 변경
                 simPanel.innerHTML = `<div style="font-size: 16px; color:#7f8c8d; margin-bottom:5px;">📊 시뮬레이션 결과</div>` +
                                      `<div style="font-size: 14px; font-weight: normal; color: #555;">실수행 기간: ${startDateStr} ~ ${endDateStr}</div>` +
                                      `<div style="font-size: 14px; font-weight: normal; color: #555; margin-bottom:12px;">(<span style="color:#2c3e50; font-weight:bold;">${totalYears.toFixed(2)}년</span> / ${totalDays}일 [개장: ${tradingDays}일])</div>` +
-                                     `<div class="eval-capital" style="color:#d35400; font-size:24px; margin-bottom:5px;">효용성: ${utility.toFixed(2)}% <span style="font-size:18px; color:#2c3e50;">(${multiple.toFixed(2)}배)</span></div>` +
-                                     `<div style="font-size: 15px; font-weight: normal; color: #2c3e50; margin-top:5px;">CAGR: <span style="color:#e74c3c; font-weight:bold;">${cagr.toFixed(2)}%</span> <span style="font-size:13px; color:#3498db; margin-left:5px;">[단순 보유 CAGR: ${baseCagr.toFixed(2)}%]</span></div>`;
+                                     `<div style="font-size: 16px; color: #2c3e50; margin-bottom:5px;">전략 적용 시 <strong>${totalYears.toFixed(2)}년</strong> 총 수익률 <strong>${multiple.toFixed(2)}배</strong></div>` +
+                                     `<div class="eval-capital" style="color:#d35400; font-size:24px; margin-bottom:5px;">전략 효용성: ${utility.toFixed(2)}%</div>` +
+                                     `<div style="font-size: 15px; font-weight: normal; color: #2c3e50; margin-top:5px;">CAGR: <span style="color:#e74c3c; font-weight:bold;">${cagr.toFixed(2)}%</span> <span style="font-size:13px; color:#7f8c8d; margin-left:5px;">[단순 보유 CAGR: ${baseCagr.toFixed(2)}%]</span></div>`;
                 simPanel.style.display = 'block';
 
                 evalPanel.innerHTML = `오늘의 현황 (${latestDate})<br>` +
@@ -1001,6 +993,7 @@
             };
         }
 
+        // 종가선 검정색, 이평선 회색, 평균이격 보라색 점선 변경
         function renderPriceChart(labels, priceData, smaData, priceAvgLineData, priceBuyLineData, priceSellLineData, avgDisparity, period) {
             const ctx = document.getElementById('priceChart').getContext('2d');
             if (priceChartInstance) priceChartInstance.destroy();
@@ -1009,9 +1002,9 @@
                 data: {
                     labels: labels,
                     datasets: [
-                        { label: `${cachedCompanyName} 수정종가`, data: priceData, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, order: 1 },
-                        { label: `평균 이격 위치 (${avgDisparity.toFixed(2)}x)`, data: priceAvgLineData, borderColor: '#000000', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 2 },
-                        { label: `${period}일 이동평균선`, data: smaData, borderColor: '#f1c40f', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 3 },
+                        { label: `${cachedCompanyName} 수정종가`, data: priceData, borderColor: '#000000', backgroundColor: 'rgba(0, 0, 0, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, order: 1 },
+                        { label: `평균 이격 위치 (${avgDisparity.toFixed(2)}x)`, data: priceAvgLineData, borderColor: '#8e44ad', borderDash: [5, 5], borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 2 },
+                        { label: `${period}일 이동평균선`, data: smaData, borderColor: '#7f8c8d', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 3 },
                         { label: `매도 타점 가격`, data: priceSellLineData, borderColor: '#3498db', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 4 },
                         { label: `매수 타점 가격`, data: priceBuyLineData, borderColor: '#e74c3c', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 5 }
                     ]
@@ -1027,6 +1020,7 @@
             });
         }
 
+        // 이격비율 검정색, 이평선 회색, 평균이격 보라색 점선 변경
         function renderDisparityChart(labels, disparityData, baseLineData, avgLineData, buyLineData, sellLineData, avgDisparity, maxDisp, minDisp, period) {
             const ctx = document.getElementById('disparityChart').getContext('2d');
             if (disparityChartInstance) disparityChartInstance.destroy();
@@ -1035,9 +1029,9 @@
                 data: {
                     labels: labels,
                     datasets: [ 
-                        { label: `${period}일 이격 비율`, data: disparityData, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, fill: true, order: 1 },
-                        { label: `평균 이격도 (${avgDisparity.toFixed(2)}x)`, data: avgLineData, borderColor: '#000000', borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true, order: 2 },
-                        { label: `이평선 (1.0x)`, data: baseLineData, borderColor: '#f1c40f', borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true, order: 3 },
+                        { label: `${period}일 이격 비율`, data: disparityData, borderColor: '#000000', backgroundColor: 'rgba(0, 0, 0, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, fill: true, order: 1 },
+                        { label: `평균 이격도 (${avgDisparity.toFixed(2)}x)`, data: avgLineData, borderColor: '#8e44ad', borderDash: [5, 5], borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true, order: 2 },
+                        { label: `이평선 (1.0x)`, data: baseLineData, borderColor: '#7f8c8d', borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true, order: 3 },
                         { label: `매도선`, data: sellLineData, borderColor: '#3498db', borderWidth: 2, borderDash: [5,5], pointRadius: 0, tension: 0, spanGaps: true, order: 4 },
                         { label: `매수선`, data: buyLineData, borderColor: '#e74c3c', borderWidth: 2, borderDash: [5,5], pointRadius: 0, tension: 0, spanGaps: true, order: 5 }
                     ]
@@ -1047,7 +1041,7 @@
                     plugins: { zoom: zoomPluginX },
                     scales: { 
                         x: { grid: getYearlyGridConfig(), ticks: getYearlyTicksConfig() }, 
-                        y: { type: 'linear', display: true, position: 'right', title: { display: true, text: '이격 비율', color: '#3498db' }, min: minDisp, max: maxDisp } 
+                        y: { type: 'linear', display: true, position: 'right', title: { display: true, text: '이격 비율', color: '#000000' }, min: minDisp, max: maxDisp } 
                     } 
                 }
             });
@@ -1131,7 +1125,7 @@
                 data: {
                     labels: window.currentAnalysis.dates,
                     datasets: [
-                        { label: '이격 비율 (좌측)', data: window.currentAnalysis.disparity, borderColor: '#3498db', yAxisID: 'y', pointRadius: 0, tension: 0.1, spanGaps: true },
+                        { label: '이격 비율 (좌측)', data: window.currentAnalysis.disparity, borderColor: '#000000', yAxisID: 'y', pointRadius: 0, tension: 0.1, spanGaps: true }, // 파랑->검정 수정
                         { label: '물림일수 (우측)', data: window.currentAnalysis.mulrim, borderColor: '#e74c3c', yAxisID: 'y1', pointRadius: 0, tension: 0.1, spanGaps: true }
                     ]
                 },
@@ -1140,7 +1134,7 @@
                     plugins: { zoom: zoomPluginX },
                     scales: {
                         x: { grid: getYearlyGridConfig(), ticks: getYearlyTicksConfig() },
-                        y: { type: 'linear', position: 'left', title: { display: true, text: '이격비율', color: '#3498db' }, min: window.currentAnalysis.minDisp, max: window.currentAnalysis.maxDisp },
+                        y: { type: 'linear', position: 'left', title: { display: true, text: '이격비율', color: '#000000' }, min: window.currentAnalysis.minDisp, max: window.currentAnalysis.maxDisp }, // Y축 라벨 검정색
                         y1: { type: 'linear', position: 'right', title: { display: true, text: '물림일수', color: '#e74c3c' }, grid: { drawOnChartArea: false } }
                     }
                 }
@@ -1252,8 +1246,8 @@
                             type: 'bar',
                             label: '실제 분포 (히스토그램 밀도)',
                             data: histData,
-                            backgroundColor: 'rgba(52, 152, 219, 0.6)',
-                            borderColor: 'rgba(41, 128, 185, 1)',
+                            backgroundColor: 'rgba(0, 0, 0, 0.4)', // 여기도 파란색에서 어두운계열로 맞춤
+                            borderColor: '#000000',
                             borderWidth: 1,
                             barPercentage: 1.0,
                             categoryPercentage: 1.0
@@ -1466,7 +1460,6 @@
             const baseInitialPrice = cachedData.prices[firstValidIdx];
             const baseLatestPrice = cachedData.prices[N - 1];
             
-            // 단순 Buy&Hold의 최종 자본과 CAGR
             const baseFinalCapital = (initCap / baseInitialPrice) * baseLatestPrice;
             const baseCagr = (Math.pow(baseLatestPrice / baseInitialPrice, 1 / totalYears) - 1) * 100;
 
@@ -1535,7 +1528,6 @@
             let scatterData = [];
             let scatterColors = [];
             
-            // 전역 색상 매핑 함수를 통해 색상을 일관되게 생성
             for (let item of results) {
                 scatterData.push({ x: item.sell, y: item.buy });
                 scatterColors.push(getTradeColor(item.v, maxFinalCapital, minFinalCapital, 0.8));
@@ -1569,12 +1561,10 @@
                             let maxStrategyCagr = (Math.pow(maxFinalCapital / initCap, 1 / totalYears) - 1) * 100;
                             let maxUtility = baseCagr !== 0 ? (maxStrategyCagr / baseCagr - 1) * 100 : 0;
 
-                            // 텍스트를 그리기 위한 동적 색상 생성 (알파값 1.0)
                             let maxColor = getTradeColor(maxFinalCapital, maxFinalCapital, minFinalCapital, 1.0);
                             let baseColor = getTradeColor(baseFinalCapital, maxFinalCapital, minFinalCapital, 1.0);
                             let itemColor = getTradeColor(item.v, maxFinalCapital, minFinalCapital, 1.0);
 
-                            // 전체 텍스트 묶음을 타점 계산 색상으로 명확히 입히기
                             document.getElementById('trade-opt-result-text').innerHTML = 
                                 `<strong style="color:#000000; font-size:16px;">단순 Buy&Hold</strong><br>` +
                                 `<span style="color:${baseColor}; font-weight:bold;">효용성: 0.00% / CAGR: ${baseCagr.toFixed(2)}%</span><br><br>` +
@@ -1606,7 +1596,6 @@
                 }
             });
 
-            // 화면 초기 렌더링 텍스트
             let maxStrategyCagr = (Math.pow(maxFinalCapital / initCap, 1 / totalYears) - 1) * 100;
             let maxUtility = baseCagr !== 0 ? (maxStrategyCagr / baseCagr - 1) * 100 : 0;
 
@@ -1773,7 +1762,7 @@
                 data: {
                     labels: chartDates,
                     datasets: [
-                        { label: '종가 (좌측축)', data: chartPrices, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', borderWidth: 2, pointRadius: 0, yAxisID: 'y', order: 2 },
+                        { label: '종가 (좌측축)', data: chartPrices, borderColor: '#000000', backgroundColor: 'rgba(0, 0, 0, 0.1)', borderWidth: 2, pointRadius: 0, yAxisID: 'y', order: 2 },
                         { label: '총 자산 (우측축)', data: chartCaps, borderColor: '#d35400', backgroundColor: 'rgba(211, 84, 0, 0.1)', borderWidth: 2, pointRadius: 0, yAxisID: 'y1', order: 1 }
                     ]
                 },
@@ -1785,7 +1774,7 @@
                     },
                     scales: {
                         x: { grid: getYearlyGridConfig(), ticks: getYearlyTicksConfig() },
-                        y: { type: 'logarithmic', display: true, position: 'left', title: { display: true, text: '종가 (로그)', color: '#3498db' } },
+                        y: { type: 'logarithmic', display: true, position: 'left', title: { display: true, text: '종가 (로그)', color: '#000000' } },
                         y1: { type: 'logarithmic', display: true, position: 'right', title: { display: true, text: '총 자산 (로그)', color: '#d35400' }, grid: { drawOnChartArea: false } }
                     }
                 }
