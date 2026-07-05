@@ -1522,7 +1522,7 @@
                     let strategyCagr = (Math.pow(finalCap / initCap, 1 / totalYears) - 1) * 100;
                     let utility = baseCagr !== 0 ? (strategyCagr / baseCagr - 1) * 100 : 0;
 
-                    // 화면에 렌더링 할 때 꺼내어 쓰기 위해 cagr 속성을 추가해 주었습니다!
+                    // 화면에 렌더링 할 때 꺼내어 쓰기 위해 cagr 속성을 추가
                     results.push({ buy: buyPt, sell: sellPt, v: finalCap, utility: utility, cagr: strategyCagr });
 
                     if (finalCap > maxFinalCapital) {
@@ -1586,12 +1586,14 @@
 
                             // ✨ 여기서 요청하신 형태로 텍스트 출력 형식을 개편했습니다! ✨
                             document.getElementById('trade-opt-result-text').innerHTML = 
-                                `<strong style="color:#d35400; font-size:16px;">최고 효율 지점</strong><br>` +
-                                `매수 <span style="color:#27ae60;">${bestBuy.toFixed(2)}x</span> 이하 / 매도 <span style="color:#e74c3c;">${bestSell.toFixed(2)}x</span> 이상<br>` +
-                                `효용성: <span style="color:#e74c3c;">${maxUtility.toFixed(2)}%</span> <span style="font-size:14px; color:#7f8c8d;">(CAGR: ${maxStrategyCagr.toFixed(2)}%)</span><br><br>` +
-                                `<strong style="color:#2980b9; font-size:16px;">선택된 타점</strong><br>` +
-                                `매수 <span style="color:#27ae60;">${item.buy.toFixed(2)}x</span> 이하 / 매도 <span style="color:#e74c3c;">${item.sell.toFixed(2)}x</span> 이상<br>` +
-                                `효용성: <span style="color:#2980b9;">${item.utility.toFixed(2)}%</span> <span style="font-size:14px; color:#7f8c8d;">(CAGR: ${item.cagr.toFixed(2)}%)</span>`;
+                                `<strong style="color:#000000; font-size:16px;">단순 Buy&Hold</strong><br>` +
+                                `효용성: 0.00% / CAGR: ${baseCagr.toFixed(2)}%<br><br>` +
+                                `<strong style="color:#000000; font-size:16px;">최고 효율 지점</strong><br>` +
+                                `매수 <span style="color:#e74c3c;">${bestBuy.toFixed(2)}x</span> 이하 / 매도 <span style="color:#3498db;">${bestSell.toFixed(2)}x</span> 이상<br>` +
+                                `효용성: <span style="color:#e74c3c;">${maxUtility.toFixed(2)}%</span> / CAGR: <span style="color:#e74c3c;">${maxStrategyCagr.toFixed(2)}%</span><br><br>` +
+                                `<strong style="color:#000000; font-size:16px;">선택된 타점</strong><br>` +
+                                `매수 <span style="color:#e74c3c;">${item.buy.toFixed(2)}x</span> 이하 / 매도 <span style="color:#3498db;">${item.sell.toFixed(2)}x</span> 이상<br>` +
+                                `효용성: <span style="color:#2980b9;">${item.utility.toFixed(2)}%</span> / CAGR: <span style="color:#2980b9;">${item.cagr.toFixed(2)}%</span>`;
                         }
                     },
                     plugins: {
@@ -1619,9 +1621,11 @@
             let maxUtility = baseCagr !== 0 ? (maxStrategyCagr / baseCagr - 1) * 100 : 0;
 
             document.getElementById('trade-opt-result-text').innerHTML = 
-                `<strong style="color:#d35400; font-size:16px;">최고 효율 지점</strong><br>` +
-                `매수 <span style="color:#27ae60;">${bestBuy.toFixed(2)}x</span> 이하 / 매도 <span style="color:#e74c3c;">${bestSell.toFixed(2)}x</span> 이상<br>` +
-                `효용성: <span style="color:#e74c3c;">${maxUtility.toFixed(2)}%</span> <span style="font-size:14px; color:#7f8c8d;">(CAGR: ${maxStrategyCagr.toFixed(2)}%)</span>`;
+                `<strong style="color:#000000; font-size:16px;">단순 Buy&Hold</strong><br>` +
+                `효용성: 0.00% / CAGR: ${baseCagr.toFixed(2)}%<br><br>` +
+                `<strong style="color:#000000; font-size:16px;">최고 효율 지점</strong><br>` +
+                `매수 <span style="color:#e74c3c;">${bestBuy.toFixed(2)}x</span> 이하 / 매도 <span style="color:#3498db;">${bestSell.toFixed(2)}x</span> 이상<br>` +
+                `효용성: <span style="color:#e74c3c;">${maxUtility.toFixed(2)}%</span> / CAGR: <span style="color:#e74c3c;">${maxStrategyCagr.toFixed(2)}%</span>`;
             document.getElementById('trade-opt-apply-btn').style.display = 'inline-block';
         }
 
