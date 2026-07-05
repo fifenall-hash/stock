@@ -1423,12 +1423,6 @@
             document.getElementById('opt-apply-btn').style.display = 'inline-block';
         }
 
-        function applyOptimization() {
-            document.getElementById('ma-period').value = bestOptimizedPeriod;
-            closeModal('optimizer-modal');
-            calculateAndRender();
-        }
-
         function openTradeOptimizer() {
             if (!cachedData) return alert('먼저 데이터를 불러와주세요.');
             openModal('trade-optimizer-modal');
@@ -1472,6 +1466,22 @@
                 return alert("데이터가 너무 적어 최적화할 수 없습니다.");
             }
 
+            // --- 효용성(Utility) 계산을 위한 기본 Buy & Hold 수익률(baseCagr) 선행 계산 ---
+            let firstValidIdx = disparities.findIndex(d => d !== null);
+            if (firstValidIdx === -1) firstValidIdx = 0;
+
+            const startDt = new Date(cachedData.dates[firstValidIdx]);
+            const endDt = new Date(cachedData.dates[N - 1]);
+            const diffTime = Math.abs(endDt - startDt);
+            const totalDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            let totalYears = totalDays / 365.2425;
+            if (totalYears <= 0) totalYears = 0.001;
+
+            const baseInitialPrice = cachedData.prices[firstValidIdx];
+            const baseLatestPrice = cachedData.prices[N - 1];
+            const baseCagr = (Math.pow(baseLatestPrice / baseInitialPrice, 1 / totalYears) - 1) * 100;
+            // ---------------------------------------------------------------------------------
+
             let step = 0.05; 
             let startD = Math.floor(minD * 100) / 100;
             let endD = Math.ceil(maxD * 100) / 100;
@@ -1492,9 +1502,6 @@
                 for (let j = 0; j < xLabels.length; j++) {
                     let buyPt = xLabels[j];
                     if (buyPt >= sellPt) continue;
-
-                    let firstValidIdx = disparities.findIndex(d => d !== null);
-                    if (firstValidIdx === -1) firstValidIdx = 0;
 
                     let cash = 0;
                     let shares = initCap / cachedData.prices[firstValidIdx];
@@ -1517,7 +1524,12 @@
                     }
                     
                     let finalCap = cash + (shares * cachedData.prices[N - 1]);
-                    results.push({ buy: buyPt, sell: sellPt, v: finalCap });
+
+                    // 효용성 계산 추가: (해당지점연평균수익률 / 단순buy&hold연평균수익률 - 1) * 100%
+                    let strategyCagr = (Math.pow(finalCap / initCap, 1 / totalYears) - 1) * 100;
+                    let utility = baseCagr !== 0 ? (strategyCagr / baseCagr - 1) * 100 : 0;
+
+                    results.push({ buy: buyPt, sell: sellPt, v: finalCap, utility: utility });
 
                     if (finalCap > maxFinalCapital) {
                         maxFinalCapital = finalCap;
@@ -1556,7 +1568,7 @@
                 type: 'scatter',
                 data: {
                     datasets: [{
-                        label: '최종 자본금 (적색:최고수익 → 청색:최저수익)',
+                        label: '효용성 및 자본금 (적색:최고효율 → 청색:최저효율)',
                         data: scatterData,
                         backgroundColor: scatterColors,
                         pointStyle: 'rect',
@@ -1574,10 +1586,14 @@
                             window.selectedPointFromChart = { buy: item.buy, sell: item.sell };
                             document.getElementById('custom-apply-btn').disabled = false;
                             
+                            // 최고 타점의 효용성 계산
+                            let maxStrategyCagr = (Math.pow(maxFinalCapital / initCap, 1 / totalYears) - 1) * 100;
+                            let maxUtility = baseCagr !== 0 ? (maxStrategyCagr / baseCagr - 1) * 100 : 0;
+
                             document.getElementById('trade-opt-result-text').innerHTML = 
                                 `최고 효율 매수: <span style="color:#27ae60;">${bestBuy}x</span> 이하 / 매도: <span style="color:#e74c3c;">${bestSell}x</span> 이상<br>`+
-                                `이때의 예상 최고 자본: <span style="color:#d35400;">${maxFinalCapital.toLocaleString(undefined, {maximumFractionDigits:2})}</span><br><br>`+
-                                `<span style="color:#2980b9; font-size:15px; font-weight:bold;">[선택된 타점] 매수: ${item.buy.toFixed(2)}x / 매도: ${item.sell.toFixed(2)}x (최종자본: ${item.v.toLocaleString(undefined, {maximumFractionDigits:2})})</span>`;
+                                `효용성: <span style="color:#d35400;">${maxUtility.toFixed(2)}%</span> <span style="font-size:13px; color:#7f8c8d;">(최종 자산: ${maxFinalCapital.toLocaleString(undefined, {maximumFractionDigits:0})})</span><br><br>`+
+                                `<span style="color:#2980b9; font-size:15px; font-weight:bold;">[선택된 타점] 매수: ${item.buy.toFixed(2)}x / 매도: ${item.sell.toFixed(2)}x (효용성: ${item.utility.toFixed(2)}%)</span>`;
                         }
                     },
                     plugins: {
@@ -1587,7 +1603,8 @@
                                 label: function(context) {
                                     let idx = context.dataIndex;
                                     let cap = results[idx].v;
-                                    return `매도: ${context.parsed.x.toFixed(2)}x, 매수: ${context.parsed.y.toFixed(2)}x | 자산: ${cap.toLocaleString(undefined, {maximumFractionDigits:0})}`;
+                                    let utility = results[idx].utility;
+                                    return `매도: ${context.parsed.x.toFixed(2)}x, 매수: ${context.parsed.y.toFixed(2)}x | 효용성: ${utility.toFixed(2)}% (자본: ${cap.toLocaleString(undefined, {maximumFractionDigits:0})})`;
                                 }
                             }
                         }
@@ -1599,9 +1616,13 @@
                 }
             });
 
+            // 최고 타점의 효용성 텍스트 기본 표시
+            let maxStrategyCagr = (Math.pow(maxFinalCapital / initCap, 1 / totalYears) - 1) * 100;
+            let maxUtility = baseCagr !== 0 ? (maxStrategyCagr / baseCagr - 1) * 100 : 0;
+
             document.getElementById('trade-opt-result-text').innerHTML = 
                 `최고 효율 매수: <span style="color:#27ae60;">${bestBuy}x</span> 이하 / 매도: <span style="color:#e74c3c;">${bestSell}x</span> 이상<br>`+
-                `이때의 예상 최종 자산: <span style="color:#e74c3c;">${maxFinalCapital.toLocaleString(undefined, {maximumFractionDigits:2})}</span>`;
+                `효용성: <span style="color:#e74c3c;">${maxUtility.toFixed(2)}%</span> <span style="font-size:13px; color:#7f8c8d;">(최종 자산: ${maxFinalCapital.toLocaleString(undefined, {maximumFractionDigits:0})})</span>`;
             document.getElementById('trade-opt-apply-btn').style.display = 'inline-block';
         }
 
