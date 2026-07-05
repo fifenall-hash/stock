@@ -5,11 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>주식 커스텀 분석 및 매매 최적화 시스템</title>
     
-    <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#2c3e50">
-    <link rel="shortcut icon" href="icon.ico" type="image/x-icon">
-    <link rel="icon" href="icon.ico" type="image/x-icon">
-    <link rel="apple-touch-icon" href="icon.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Stock Analytics">
@@ -34,7 +30,7 @@
         canvas {
             touch-action: pan-y !important; /* 위아래 스크롤 허용, 좌우는 차트 이동 */
         }
-        #scatterChart, #tradeOptimizerChart, #splitCalcChart {
+        #scatterChart, #tradeOptimizerChart, #splitCalcChart, #distChart {
             touch-action: none !important; 
         }
 
@@ -221,6 +217,8 @@
             max-width: 900px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
             text-align: center;
+            max-height: 90vh;
+            overflow-y: auto;
         }
         .opt-chart-container {
             position: relative;
@@ -355,6 +353,34 @@
         </div>
     </div>
 
+    <!-- 6. 이격도 분포도 및 누적확률 모달창 -->
+    <div id="dist-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 style="font-size: 18px; margin-top: 0; color:#2c3e50;">📊 이격도 확률 분포도 (실제 vs 정규분포)</h2>
+            <div class="opt-chart-container">
+                <canvas id="distChart"></canvas>
+            </div>
+            
+            <div style="background:#f1f2f6; padding:15px; border-radius:8px; margin-bottom:15px; text-align:center; font-size:14px;">
+                <label style="font-weight:bold; color:#2c3e50;">누적 확률 타점 계산:</label><br>
+                <div style="margin-top: 10px; display: flex; justify-content: center; align-items: center; gap: 8px;">
+                    <span style="color:#7f8c8d;">하위</span>
+                    <input type="number" id="dist-percent-input" value="30" step="1" style="width: 70px; padding: 6px; border:1px solid #ccc; border-radius:4px; text-align:center; font-size: 16px; font-weight:bold; color:#e74c3c;">
+                    <span style="color:#7f8c8d;">% (퍼센트)</span>
+                    <button class="btn btn-info" style="padding:6px 16px; margin:0; font-weight:bold;" onclick="calcDistributionPercentile()">계산하기</button>
+                </div>
+                <div id="dist-calc-result" style="margin-top: 15px; background: #fff; border: 1px solid #ddd; padding: 10px; border-radius: 6px; line-height:1.8; font-size:15px; display:none;">
+                    %를 입력하고 계산하기를 누르면 해당 확률의 이격도 타점을 알려줍니다.
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(distChartInstance)">🔍 줌 초기화</button>
+                <button class="btn" style="margin:0;" onclick="closeModal('dist-modal')">닫기</button>
+            </div>
+        </div>
+    </div>
+
     <div class="widget-container">
         <div class="header">
             <h1 id="main-title">Custom Analytics & Simulator</h1>
@@ -389,6 +415,7 @@
             <div class="btn-group" style="margin-top: 5px;">
                 <button class="btn btn-info" onclick="openTimeseriesModal()">📅 이격도 vs 물림일수</button>
                 <button class="btn btn-info" onclick="openScatterModal()">📈 이격-물림 산점도</button>
+                <button class="btn btn-info" onclick="openDistributionModal()">📊 이격도 분포도 보기</button>
                 <button class="btn btn-reset" onclick="resetMainChartsZoom()">🔍 차트 줌 초기화</button>
             </div>
         </div>
@@ -453,6 +480,7 @@
         let tradeOptChartInstance = null;
         let timeseriesChartInstance = null;
         let scatterChartInstance = null;
+        let distChartInstance = null;
         
         let bestOptimizedPeriod = 1500;
         let bestOptimizedBuy = 1.5;
@@ -828,9 +856,11 @@
                 minDisp = Math.min(...validDisparities, 1.0, buyPoint, avgDisparity);
             }
 
+            // 분석 데이터 보존 (분포도 모달에서도 사용할 수 있도록 validDisparities 포함)
             window.currentAnalysis = {
                 dates: cachedData.dates.slice(firstValidIdx), 
                 disparity: disparityData.slice(firstValidIdx), 
+                validDisparities: validDisparities,
                 mulrim: safeMulrimData.slice(firstValidIdx),
                 slope: slope, intercept: intercept, minDisp: minDisp, maxDisp: maxDisp, period: period
             };
@@ -1057,7 +1087,6 @@
             tableBody.innerHTML = htmlContent;
         }
 
-        // CSV 다운로드 함수 전면 교체: HTML 표에서 읽어오지 않고 전체(Full) 배열 데이터를 직접 조립하여 출력
         function downloadCSV() {
             if (!window.fullCsvData) return alert('다운로드할 데이터가 없습니다.');
             
@@ -1072,7 +1101,6 @@
             let csvContent = "\uFEFF"; 
             csvContent += "날짜,수정종가,이평선,이격도,물림일수(일),매매 상태,보유 현금,주식 평가액,총 자산\n";
             
-            // 표에 보이는 순서(최신순)와 동일하게 역순 기록. 선택한 시작점까지만 추출
             for (let i = dates.length - 1; i >= startIndex; i--) {
                 const date = dates[i];
                 const price = prices[i] ? prices[i].toFixed(4) : '-';
@@ -1170,6 +1198,168 @@
                     scales: { x: { type: 'linear', position: 'bottom', title: { display: true, text: '이격비율' } }, y: { title: { display: true, text: '물림일수' }, beginAtZero: true } }
                 }
             });
+        }
+
+        // --- 6. 이격도 확률 분포도 모달창 ---
+        function openDistributionModal() {
+            if (!window.currentAnalysis || !window.currentAnalysis.validDisparities || window.currentAnalysis.validDisparities.length === 0) {
+                return alert('먼저 데이터를 계산해주세요.');
+            }
+            
+            openModal('dist-modal');
+            document.getElementById('dist-calc-result').style.display = 'none'; // 여는 순간엔 가리기
+            
+            const disparities = window.currentAnalysis.validDisparities;
+            let sum = 0, sqSum = 0;
+            for(let d of disparities) { sum += d; }
+            let mean = sum / disparities.length;
+            for(let d of disparities) { sqSum += (d - mean) ** 2; }
+            let stdDev = Math.sqrt(sqSum / disparities.length);
+
+            let min = Math.min(...disparities);
+            let max = Math.max(...disparities);
+            
+            let bins = 60; // 막대 개수
+            let binWidth = (max - min) / bins;
+            let counts = new Array(bins).fill(0);
+
+            for(let d of disparities) {
+                let index = Math.floor((d - min) / binWidth);
+                if(index >= bins) index = bins - 1; 
+                if(index < 0) index = 0;
+                counts[index]++;
+            }
+
+            let labels = [];
+            let histData = [];
+            let normData = [];
+            let total = disparities.length;
+
+            for(let i=0; i<bins; i++) {
+                let binMid = min + (i + 0.5) * binWidth;
+                labels.push(binMid.toFixed(2));
+                
+                // 확률 밀도(Density) 계산: 도수 / (전체수 * 막대너비)
+                let density = counts[i] / (total * binWidth);
+                histData.push(density);
+                
+                // 정규분포 PDF
+                let normPdf = (1 / (stdDev * Math.sqrt(2 * Math.PI))) * Math.exp(-0.5 * Math.pow((binMid - mean)/stdDev, 2));
+                normData.push(normPdf);
+            }
+
+            const ctx = document.getElementById('distChart').getContext('2d');
+            if (distChartInstance) distChartInstance.destroy();
+            
+            distChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            type: 'bar',
+                            label: '실제 분포 (히스토그램 밀도)',
+                            data: histData,
+                            backgroundColor: 'rgba(52, 152, 219, 0.6)',
+                            borderColor: 'rgba(41, 128, 185, 1)',
+                            borderWidth: 1,
+                            barPercentage: 1.0,
+                            categoryPercentage: 1.0
+                        },
+                        {
+                            type: 'line',
+                            label: '정규분포 곡선 (PDF)',
+                            data: normData,
+                            borderColor: 'rgba(231, 76, 60, 1)',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            fill: false,
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        zoom: zoomPluginX,
+                        tooltip: {
+                            callbacks: {
+                                title: function(ctx) { return '이격도: ' + ctx[0].label + 'x 구간'; },
+                                label: function(ctx) {
+                                    return ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(4);
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: { display: true, text: '이격 비율' }
+                        },
+                        y: {
+                            title: { display: true, text: '확률 밀도 (Density)' },
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+            
+            // 모달 열 때 자동으로 한 번 계산
+            calcDistributionPercentile();
+        }
+
+        // 역 정규분포 함수 (Inverse Normal CDF) - 통계학 근사 알고리즘
+        function inverseNormalCDF(p) {
+            if (p <= 0.0) return -Infinity;
+            if (p >= 1.0) return Infinity;
+            let t, z;
+            if (p < 0.5) {
+                t = Math.sqrt(-2.0 * Math.log(p));
+            } else {
+                t = Math.sqrt(-2.0 * Math.log(1.0 - p));
+            }
+            let c0 = 2.515517, c1 = 0.802853, c2 = 0.010328;
+            let d1 = 1.432788, d2 = 0.189269, d3 = 0.001308;
+            z = t - ((c2 * t + c1) * t + c0) / (((d3 * t + d2) * t + d1) * t + 1.0);
+            return p < 0.5 ? -z : z;
+        }
+
+        function calcDistributionPercentile() {
+            let val = parseFloat(document.getElementById('dist-percent-input').value);
+            let p = val / 100;
+            if (isNaN(p) || p <= 0 || p >= 1) return alert("0보다 크고 100보다 작은 올바른 %를 입력해주세요.");
+
+            const disparities = window.currentAnalysis.validDisparities;
+            let sum = 0, sqSum = 0;
+            for(let d of disparities) { sum += d; }
+            let mean = sum / disparities.length;
+            for(let d of disparities) { sqSum += (d - mean) ** 2; }
+            let stdDev = Math.sqrt(sqSum / disparities.length);
+
+            // 1. 정규분포 가정 시 누적 확률의 이격도 (Inverse Normal CDF)
+            let z = inverseNormalCDF(p);
+            let expectedDisparity = mean + z * stdDev;
+
+            // 2. 실제 데이터 기준의 백분위수 (하위 n%)
+            let sortedDisp = disparities.slice().sort((a,b) => a - b);
+            let targetIndex = Math.floor(p * sortedDisp.length);
+            // index 초과 방지
+            if (targetIndex >= sortedDisp.length) targetIndex = sortedDisp.length - 1;
+            let actualDisparity = sortedDisp[targetIndex];
+
+            const resDiv = document.getElementById('dist-calc-result');
+            resDiv.style.display = 'block';
+            resDiv.innerHTML = 
+                `-infinity 부터 누적 하위 <span style="color:#e74c3c; font-size:18px; font-weight:bold;">${val}%</span> 지점 타점 분석:<br>` +
+                `<div style="margin-top:10px; background:#e8f4f8; padding:10px; border-radius:6px; border:1px solid #bce8f1;">` +
+                `✅ <strong>실제 데이터 기준:</strong> 이격도 <span style="color:#27ae60; font-size:18px; font-weight:bold;">${actualDisparity.toFixed(4)}x</span> 이하<br>` +
+                `<span style="font-size:13px; color:#7f8c8d;">(과거 전체 데이터 중 정확히 하위 ${val}%에 해당하는 실제 수치)</span>` +
+                `</div>` +
+                `<div style="margin-top:5px; background:#fdfbf7; padding:10px; border-radius:6px; border:1px solid #f5b041;">` +
+                `📉 <strong>정규분포 가정시:</strong> 이격도 <span style="color:#d35400; font-size:18px; font-weight:bold;">${expectedDisparity.toFixed(4)}x</span> 이하<br>` +
+                `<span style="font-size:13px; color:#7f8c8d;">(수학적 정규분포 모형으로 계산한 이론적 수치)</span>` +
+                `</div>`;
         }
 
         function getFastR2ForPeriod(period) {
@@ -1307,7 +1497,6 @@
                     if (firstValidIdx === -1) firstValidIdx = 0;
 
                     let cash = 0;
-                    // 이격도가 나타나는 첫 지점 전액 매수한 상태로 시작
                     let shares = initCap / cachedData.prices[firstValidIdx];
                     let isHolding = true;
                     
@@ -1466,8 +1655,6 @@
             if (!cachedData) return alert('먼저 데이터를 불러와주세요.');
             
             const container = document.getElementById('conditions-container');
-            
-            // 모달을 처음 열 때 기본 예시 조건 2개를 세팅해줍니다.
             if (container.children.length === 0) {
                 addConditionRow(3.5, 'gte', 0.4);
                 addConditionRow(2.0, 'lte', 1.0);
@@ -1475,7 +1662,6 @@
 
             document.getElementById('split-result-panel').style.display = 'none';
             document.getElementById('split-calc-reset-btn').style.display = 'none';
-            
             openModal('split-calc-modal');
         }
 
@@ -1483,7 +1669,6 @@
             const rows = document.querySelectorAll('.condition-row');
             if (rows.length === 0) return alert("최소 1개의 조건을 추가해주세요.");
 
-            // 사용자가 입력한 조건 파싱
             let conditions = [];
             for (let row of rows) {
                 let disp = parseFloat(row.querySelector('.cond-disp').value);
@@ -1517,27 +1702,20 @@
 
             const prices = cachedData.prices;
             let cash = 0.0;
-            let shares = initCap / prices[firstValidIdx]; // 이격도 발생 첫날 전액 매수한 상태로 세팅
+            let shares = initCap / prices[firstValidIdx];
 
             let capitalHistory = new Array(N).fill(null);
 
-            // 조건식 시뮬레이션 엔진 
             for (let i = firstValidIdx; i < N; i++) {
                 let d = disparities[i];
                 let p = prices[i];
 
-                let targetRatio = -1; // -1은 조건 미해당(관망)을 의미함
-                
-                // 등록된 조건을 위에서부터 순서대로 검사 (첫 번째로 부합하는 조건이 당첨됨)
+                let targetRatio = -1; 
                 for (let cond of conditions) {
-                    if (cond.isGreater && d >= cond.disp) {
-                        targetRatio = cond.ratio; break;
-                    } else if (!cond.isGreater && d <= cond.disp) {
-                        targetRatio = cond.ratio; break;
-                    }
+                    if (cond.isGreater && d >= cond.disp) { targetRatio = cond.ratio; break; } 
+                    else if (!cond.isGreater && d <= cond.disp) { targetRatio = cond.ratio; break; }
                 }
 
-                // 해당되는 조건이 있을 경우에만 리밸런싱 실행
                 if (targetRatio !== -1) {
                     let currentAsset = cash + shares * p;
                     let targetStockValue = currentAsset * targetRatio;
@@ -1561,12 +1739,10 @@
             let finalStock = shares * prices[N - 1];
             let finalCap = finalCash + finalStock;
 
-            // 시뮬레이션 결과 표출
             document.getElementById('res-cash').innerText = finalCash.toLocaleString(undefined, {maximumFractionDigits:2});
             document.getElementById('res-stock').innerText = finalStock.toLocaleString(undefined, {maximumFractionDigits:2});
             document.getElementById('res-total').innerText = finalCap.toLocaleString(undefined, {maximumFractionDigits:2});
 
-            // 차트 렌더링용 배열 자르기 (이격도 발생일 이후 데이터만)
             let chartDates = cachedData.dates.slice(firstValidIdx);
             let chartPrices = prices.slice(firstValidIdx);
             let chartCaps = capitalHistory.slice(firstValidIdx);
@@ -1574,70 +1750,25 @@
             const ctx = document.getElementById('splitCalcChart').getContext('2d');
             if (splitCalcChartInstance) splitCalcChartInstance.destroy();
 
-            // 종가와 총자산을 모두 추적할 수 있는 듀얼(좌/우) 로그 스케일 차트 생성
             splitCalcChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: chartDates,
                     datasets: [
-                        {
-                            label: '종가 (좌측축)',
-                            data: chartPrices,
-                            borderColor: '#3498db',
-                            backgroundColor: 'rgba(52, 152, 219, 0.1)',
-                            borderWidth: 2,
-                            pointRadius: 0,
-                            yAxisID: 'y',
-                            order: 2
-                        },
-                        {
-                            label: '총 자산 (우측축)',
-                            data: chartCaps,
-                            borderColor: '#d35400',
-                            backgroundColor: 'rgba(211, 84, 0, 0.1)',
-                            borderWidth: 2,
-                            pointRadius: 0,
-                            yAxisID: 'y1',
-                            order: 1
-                        }
+                        { label: '종가 (좌측축)', data: chartPrices, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', borderWidth: 2, pointRadius: 0, yAxisID: 'y', order: 2 },
+                        { label: '총 자산 (우측축)', data: chartCaps, borderColor: '#d35400', backgroundColor: 'rgba(211, 84, 0, 0.1)', borderWidth: 2, pointRadius: 0, yAxisID: 'y1', order: 1 }
                     ]
                 },
                 options: {
-                    responsive: true, maintainAspectRatio: false,
-                    interaction: { mode: 'index', intersect: false },
+                    responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
                     plugins: { 
                         zoom: zoomPluginX,
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    let label = context.dataset.label || '';
-                                    if (label) label += ': ';
-                                    if (context.parsed.y !== null) {
-                                        label += context.parsed.y.toLocaleString(undefined, {maximumFractionDigits: 2});
-                                    }
-                                    return label;
-                                }
-                            }
-                        }
+                        tooltip: { callbacks: { label: function(context) { let label = context.dataset.label || ''; if (label) label += ': '; if (context.parsed.y !== null) label += context.parsed.y.toLocaleString(undefined, {maximumFractionDigits: 2}); return label; } } }
                     },
                     scales: {
-                        x: { 
-                            grid: getYearlyGridConfig(), 
-                            ticks: getYearlyTicksConfig() 
-                        },
-                        y: { 
-                            type: 'logarithmic', 
-                            display: true, 
-                            position: 'left', 
-                            title: { display: true, text: '종가 (로그)', color: '#3498db' } 
-                        },
-                        y1: { 
-                            type: 'logarithmic', 
-                            display: true, 
-                            position: 'right', 
-                            title: { display: true, text: '총 자산 (로그)', color: '#d35400' },
-                            grid: { drawOnChartArea: false } // 오른쪽 보조축의 그리드선은 숨겨서 깔끔하게 유지
-                        }
+                        x: { grid: getYearlyGridConfig(), ticks: getYearlyTicksConfig() },
+                        y: { type: 'logarithmic', display: true, position: 'left', title: { display: true, text: '종가 (로그)', color: '#3498db' } },
+                        y1: { type: 'logarithmic', display: true, position: 'right', title: { display: true, text: '총 자산 (로그)', color: '#d35400' }, grid: { drawOnChartArea: false } }
                     }
                 }
             });
