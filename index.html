@@ -1148,8 +1148,297 @@
             URL.revokeObjectURL(url);
         }
 
+        function getFastR2ForPeriod(period) {
+            const N = cachedData.prices.length;
+            let validX = [], validY = [], sum = 0;
+            for (let i = 0; i < N; i++) {
+                sum += cachedData.prices[i];
+                if (i >= period) sum -= cachedData.prices[i - period];
+                if (i >= period - 1) {
+                    let avg = sum / period;
+                    if (avg > 0) {
+                        let disparity = cachedData.prices[i] / avg;
+                        if ((N - 1) - i >= cachedData.maxMulrim && Number.isFinite(disparity)) {
+                            validX.push(disparity); validY.push(cachedData.rawMulrimData[i]);
+                        }
+                    }
+                }
+            }
+            if (validX.length < 30) return 0; 
+            let sumX = 0, sumY = 0;
+            for (let i = 0; i < validX.length; i++) { sumX += validX[i]; sumY += validY[i]; }
+            let meanX = sumX / validX.length, meanY = sumY / validY.length;
+            let covXY = 0, varX = 0, varY = 0;
+            for (let i = 0; i < validX.length; i++) {
+                let dx = validX[i] - meanX, dy = validY[i] - meanY;
+                covXY += dx * dy; varX += dx * dx; varY += dy * dy;
+            }
+            if (varX > 0 && varY > 0) return (covXY / Math.sqrt(varX * varY)) ** 2;
+            return 0;
+        }
+
+        function openOptimizer() {
+            if (!cachedData) return alert('먼저 데이터를 불러와주세요.');
+            openModal('optimizer-modal');
+            document.getElementById('opt-apply-btn').style.display = 'none';
+            document.getElementById('opt-result-text').innerText = '연산 중입니다...';
+            if (optChartInstance) optChartInstance.destroy();
+            setTimeout(() => { runOptimization(); }, 50);
+        }
+
+        function runOptimization() {
+            const maxTestPeriod = Math.min(3000, cachedData.prices.length - cachedData.maxMulrim - 30);
+            if (maxTestPeriod < 1) { closeModal('optimizer-modal'); return alert("데이터가 부족합니다."); }
+            let labels = [], r2Data = [], maxR2 = -1, bestPeriod = 1; 
+            for (let p = 1; p <= maxTestPeriod; p += 1) {
+                let r2 = getFastR2ForPeriod(p);
+                labels.push(p); r2Data.push(r2);
+                if (r2 > maxR2) { maxR2 = r2; bestPeriod = p; }
+            }
+            bestOptimizedPeriod = bestPeriod;
+            
+            const ctx = document.getElementById('optimizerChart').getContext('2d');
+            let pointColors = labels.map(l => l === bestPeriod ? '#e74c3c' : '#3498db');
+            let pointRadius = labels.map(l => l === bestPeriod ? 6 : 0);
+            optChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: { labels: labels, datasets: [{ label: 'R²', data: r2Data, borderColor: '#3498db', backgroundColor: 'rgba(52,152,219,0.1)', borderWidth: 2, pointBackgroundColor: pointColors, pointBorderColor: pointColors, pointRadius: pointRadius, fill: true }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { zoom: zoomPluginX } }
+            });
+            document.getElementById('opt-result-text').innerHTML = `최적 기준일수: <span style="color:#e74c3c; font-size:20px;">${bestPeriod}일</span> (R² = ${maxR2.toFixed(4)})`;
+            document.getElementById('opt-apply-btn').style.display = 'inline-block';
+        }
+
+        function openTimeseriesModal() {
+            if (!window.currentAnalysis) return alert('먼저 데이터를 계산해주세요.');
+            openModal('timeseries-modal');
+            const ctx = document.getElementById('timeseriesChart').getContext('2d');
+            if (timeseriesChartInstance) timeseriesChartInstance.destroy();
+            timeseriesChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: window.currentAnalysis.dates,
+                    datasets: [
+                        { label: '이격 비율 (좌측)', data: window.currentAnalysis.disparity, borderColor: '#000000', yAxisID: 'y', pointRadius: 0, tension: 0.1, spanGaps: true },
+                        { label: '물림일수 (우측)', data: window.currentAnalysis.mulrim, borderColor: '#e74c3c', yAxisID: 'y1', pointRadius: 0, tension: 0.1, spanGaps: true }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+                    plugins: { zoom: zoomPluginX },
+                    scales: {
+                        x: { grid: getYearlyGridConfig(), ticks: getYearlyTicksConfig() },
+                        y: { type: 'linear', position: 'left', title: { display: true, text: '이격비율', color: '#000000' }, min: window.currentAnalysis.minDisp, max: window.currentAnalysis.maxDisp },
+                        y1: { type: 'linear', position: 'right', title: { display: true, text: '물림일수', color: '#e74c3c' }, grid: { drawOnChartArea: false } }
+                    }
+                }
+            });
+        }
+
+        function openScatterModal() {
+            if (!window.currentAnalysis) return alert('먼저 데이터를 계산해주세요.');
+            openModal('scatter-modal');
+            const ctx = document.getElementById('scatterChart').getContext('2d');
+            if (scatterChartInstance) scatterChartInstance.destroy();
+
+            let scatterData = [], scatterColors = [], validIndices = [];
+            for(let i=0; i<window.currentAnalysis.dates.length; i++) {
+                if(window.currentAnalysis.disparity[i] !== null && window.currentAnalysis.mulrim[i] !== null) validIndices.push(i);
+            }
+            const N_valid = validIndices.length;
+            for(let k = 0; k < N_valid; k++) {
+                let i = validIndices[k];
+                scatterData.push({ x: window.currentAnalysis.disparity[i], y: window.currentAnalysis.mulrim[i] });
+                let t = N_valid > 1 ? k / (N_valid - 1) : 0; 
+                let v = t * 4; 
+                let r, g, b;
+                if (v <= 1) { r = 255; g = Math.round(v * 255); b = 0; } 
+                else if (v <= 2) { r = Math.round(255 - (v - 1) * 255); g = 255; b = 0; } 
+                else if (v <= 3) { r = 0; g = 255; b = Math.round((v - 2) * 255); } 
+                else { r = 0; g = Math.round(255 - (v - 3) * 255); b = 255; }
+                scatterColors.push(`rgba(${r}, ${g}, ${b}, 0.6)`);
+            }
+
+            let trendlineData = [
+                { x: window.currentAnalysis.minDisp, y: window.currentAnalysis.slope * window.currentAnalysis.minDisp + window.currentAnalysis.intercept },
+                { x: window.currentAnalysis.maxDisp, y: window.currentAnalysis.slope * window.currentAnalysis.maxDisp + window.currentAnalysis.intercept }
+            ];
+
+            scatterChartInstance = new Chart(ctx, {
+                data: {
+                    datasets: [
+                        { type: 'scatter', label: '과거 데이터 (적색:과거 → 청색:최신)', data: scatterData, backgroundColor: scatterColors, pointRadius: 4, pointHoverRadius: 6 },
+                        { type: 'line', label: '추세선', data: trendlineData, borderColor: '#e74c3c', borderWidth: 2, pointRadius: 0, fill: false }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    interaction: { mode: 'nearest', intersect: true },
+                    plugins: { 
+                        zoom: zoomPluginXY,
+                        tooltip: { callbacks: { label: function(c) { return `이격도: ${c.parsed.x.toFixed(2)}x, 물림: ${c.parsed.y}일`; } } } 
+                    },
+                    scales: { x: { type: 'linear', position: 'bottom', title: { display: true, text: '이격비율' } }, y: { title: { display: true, text: '물림일수' }, beginAtZero: true } }
+                }
+            });
+        }
+
+        function openDistributionModal() {
+            if (!window.currentAnalysis || !window.currentAnalysis.validDisparities || window.currentAnalysis.validDisparities.length === 0) {
+                return alert('먼저 데이터를 계산해주세요.');
+            }
+            
+            openModal('dist-modal');
+            document.getElementById('dist-calc-result').style.display = 'none'; 
+            
+            const disparities = window.currentAnalysis.validDisparities;
+            let sum = 0, sqSum = 0;
+            for(let d of disparities) { sum += d; }
+            let mean = sum / disparities.length;
+            for(let d of disparities) { sqSum += (d - mean) ** 2; }
+            let stdDev = Math.sqrt(sqSum / disparities.length);
+
+            let min = Math.min(...disparities);
+            let max = Math.max(...disparities);
+            
+            let bins = 60; 
+            let binWidth = (max - min) / bins;
+            let counts = new Array(bins).fill(0);
+
+            for(let d of disparities) {
+                let index = Math.floor((d - min) / binWidth);
+                if(index >= bins) index = bins - 1; 
+                if(index < 0) index = 0;
+                counts[index]++;
+            }
+
+            let labels = [];
+            let histData = [];
+            let normData = [];
+            let total = disparities.length;
+
+            for(let i=0; i<bins; i++) {
+                let binMid = min + (i + 0.5) * binWidth;
+                labels.push(binMid.toFixed(2));
+                
+                let density = counts[i] / (total * binWidth);
+                histData.push(density);
+                
+                let normPdf = (1 / (stdDev * Math.sqrt(2 * Math.PI))) * Math.exp(-0.5 * Math.pow((binMid - mean)/stdDev, 2));
+                normData.push(normPdf);
+            }
+
+            const ctx = document.getElementById('distChart').getContext('2d');
+            if (distChartInstance) distChartInstance.destroy();
+            
+            distChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            type: 'bar',
+                            label: '실제 분포 (히스토그램 밀도)',
+                            data: histData,
+                            backgroundColor: 'rgba(0, 0, 0, 0.4)', 
+                            borderColor: '#000000',
+                            borderWidth: 1,
+                            barPercentage: 1.0,
+                            categoryPercentage: 1.0
+                        },
+                        {
+                            type: 'line',
+                            label: '정규분포 곡선 (PDF)',
+                            data: normData,
+                            borderColor: 'rgba(231, 76, 60, 1)',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            fill: false,
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        zoom: zoomPluginX,
+                        tooltip: {
+                            callbacks: {
+                                title: function(ctx) { return '이격도: ' + ctx[0].label + 'x 구간'; },
+                                label: function(ctx) {
+                                    return ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(4);
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: { display: true, text: '이격 비율' }
+                        },
+                        y: {
+                            title: { display: true, text: '확률 밀도 (Density)' },
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+            
+            calcDistributionPercentile();
+        }
+
+        function inverseNormalCDF(p) {
+            if (p <= 0.0) return -Infinity;
+            if (p >= 1.0) return Infinity;
+            let t, z;
+            if (p < 0.5) {
+                t = Math.sqrt(-2.0 * Math.log(p));
+            } else {
+                t = Math.sqrt(-2.0 * Math.log(1.0 - p));
+            }
+            let c0 = 2.515517, c1 = 0.802853, c2 = 0.010328;
+            let d1 = 1.432788, d2 = 0.189269, d3 = 0.001308;
+            z = t - ((c2 * t + c1) * t + c0) / (((d3 * t + d2) * t + d1) * t + 1.0);
+            return p < 0.5 ? -z : z;
+        }
+
+        function calcDistributionPercentile() {
+            let val = parseFloat(document.getElementById('dist-percent-input').value);
+            let p = val / 100;
+            if (isNaN(p) || p <= 0 || p >= 1) return alert("0보다 크고 100보다 작은 올바른 %를 입력해주세요.");
+
+            const disparities = window.currentAnalysis.validDisparities;
+            let sum = 0, sqSum = 0;
+            for(let d of disparities) { sum += d; }
+            let mean = sum / disparities.length;
+            for(let d of disparities) { sqSum += (d - mean) ** 2; }
+            let stdDev = Math.sqrt(sqSum / disparities.length);
+
+            let z = inverseNormalCDF(p);
+            let expectedDisparity = mean + z * stdDev;
+
+            let sortedDisp = disparities.slice().sort((a,b) => a - b);
+            let targetIndex = Math.floor(p * sortedDisp.length);
+            if (targetIndex >= sortedDisp.length) targetIndex = sortedDisp.length - 1;
+            let actualDisparity = sortedDisp[targetIndex];
+
+            const resDiv = document.getElementById('dist-calc-result');
+            resDiv.style.display = 'block';
+            resDiv.innerHTML = 
+                `-infinity 부터 누적 하위 <span style="color:#e74c3c; font-size:18px; font-weight:bold;">${val}%</span> 지점 타점 분석:<br>` +
+                `<div style="margin-top:10px; background:#e8f4f8; padding:10px; border-radius:6px; border:1px solid #bce8f1;">` +
+                `✅ <strong>실제 데이터 기준:</strong> 이격도 <span style="color:#27ae60; font-size:18px; font-weight:bold;">${actualDisparity.toFixed(4)}x</span> 이하<br>` +
+                `<span style="font-size:13px; color:#7f8c8d;">(과거 전체 데이터 중 정확히 하위 ${val}%에 해당하는 실제 수치)</span>` +
+                `</div>` +
+                `<div style="margin-top:5px; background:#fdfbf7; padding:10px; border-radius:6px; border:1px solid #f5b041;">` +
+                `📉 <strong>정규분포 가정시:</strong> 이격도 <span style="color:#d35400; font-size:18px; font-weight:bold;">${expectedDisparity.toFixed(4)}x</span> 이하<br>` +
+                `<span style="font-size:13px; color:#7f8c8d;">(수학적 정규분포 모형으로 계산한 이론적 수치)</span>` +
+                `</div>`;
+        }
+
         function getTradeRadius(pX, pY, badPts) {
-            if (!badPts || badPts.length === 0) return 0;
+            if (!badPts || badPts.length === 0) return 10.0; // 방해물이 없으면 넉넉하게 큰 반경
             let minSq = Infinity;
             for (let i = 0; i < badPts.length; i++) {
                 let b = badPts[i];
@@ -1247,7 +1536,7 @@
 
             let results = [];
             let goodPoints = [];
-            let badPoints = []; // 오로지 '표기 가능한 지점 중 효용성 0 이하'인 지점만 추가됨
+            let badPoints = []; 
             let maxFinalCapital = -1;
             let minFinalCapital = Infinity;
             let bestBuy = 0, bestSell = 0;
@@ -1257,9 +1546,9 @@
                 for (let j = 0; j < xLabels.length; j++) {
                     let buyPt = xLabels[j];
                     
-                    // 매수가 매도보다 크거나 같아지는 '표기되지 않는' 논리적 오류 지점들은
-                    // 원의 반경 계산을 제한하는 badPoints에 들어가지 않도록 허용적으로 패스합니다.
+                    // 논리적으로 불가한 타점(매수가 매도보다 높거나 같음)을 다시 투명한 벽(장애물)으로 설정합니다.
                     if (buyPt >= sellPt) {
+                        badPoints.push({ buy: buyPt, sell: sellPt, v: 0, utility: 0, cagr: 0 });
                         continue; 
                     }
 
@@ -1290,7 +1579,7 @@
                     let item = { buy: buyPt, sell: sellPt, v: finalCap, utility: utility, cagr: strategyCagr };
                     results.push(item);
 
-                    // 표기가 가능하면서 효용성이 0보다 크면 Good, 아니면 Bad(반경 제한 요소)
+                    // 표기 가능하면서 효용성 0 이하인 '진짜 실패 타점'들도 장애물(badPoints)에 추가됩니다.
                     if (utility > 0) {
                         goodPoints.push(item);
                     } else {
@@ -1404,7 +1693,7 @@
                 let maxColor = getTradeColor(maxFinalCapital, maxFinalCapital, minFinalCapital, 1.0);
                 let baseColor = getTradeColor(baseFinalCapital, maxFinalCapital, minFinalCapital, 1.0);
                 
-                let maxR = getTradeRadius(bestSell, bestBuy, badPoints); // 최고 효율 지점의 안전 반경 계산
+                let maxR = getTradeRadius(bestSell, bestBuy, badPoints); // 최고 효율 지점의 반경
 
                 let stableSectionHtml = '';
                 if (bestStablePoint) {
