@@ -121,8 +121,8 @@
         .btn-trade-opt:hover { background-color: #a04000; }
         .btn-info { background-color: #2980b9; }
         .btn-info:hover { background-color: #2471a3; }
-        .btn-apply-selected { background-color: #2980b9; }
-        .btn-apply-selected:hover { background-color: #1f618d; }
+        .btn-apply-selected { background-color: #9b59b6; } /* 보라색 강조 */
+        .btn-apply-selected:hover { background-color: #8e44ad; }
         .btn-apply-selected:disabled { background-color: #bdc3c7; cursor: not-allowed; }
         .btn-reset { background-color: #7f8c8d; }
         .btn-reset:hover { background-color: #636e72; }
@@ -274,9 +274,10 @@
             </div>
             <p id="trade-opt-result-text" style="font-size:15px; margin:15px 0; line-height: 1.6;">모든 매수/매도 조합을 시뮬레이션 중입니다...</p>
             <div class="modal-actions">
-                <button id="trade-opt-apply-btn" class="btn btn-trade-opt" style="display:none; margin:0;" onclick="applyTradeOptimization()">최적 타점 적용하기</button>
-                <button id="custom-apply-btn" class="btn btn-apply-selected" style="margin:0;" disabled onclick="applySelectedPoint()">해당 타점 적용하기</button>
-                <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(tradeOptChartInstance)">🔍 줌 및 정보창 초기화</button>
+                <button id="trade-opt-apply-btn" class="btn btn-trade-opt" style="display:none; margin:0;" onclick="applyTradeOptimization()">🚀 최고 효율 타점 적용</button>
+                <button id="stable-opt-apply-btn" class="btn btn-download" style="display:none; margin:0; background-color:#27ae60;" onclick="applyStableOptimization()">🟢 최고 안정 타점 적용</button>
+                <button id="custom-apply-btn" class="btn btn-apply-selected" style="margin:0;" disabled onclick="applySelectedPoint()">🟣 선택 타점 적용</button>
+                <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(tradeOptChartInstance)">🔍 줌/초기화</button>
                 <button class="btn" style="margin:0;" onclick="closeModal('trade-optimizer-modal')">닫기</button>
             </div>
         </div>
@@ -471,14 +472,14 @@
         let scatterChartInstance = null;
         let distChartInstance = null;
         
-        let bestOptimizedPeriod = 1500;
         let bestOptimizedBuy = 1.5;
         let bestOptimizedSell = 3.0;
-
+        let bestStableBuy = 1.5;
+        let bestStableSell = 3.0;
+        
+        window.currentOptBounds = null; // L과 H 경계를 기억하기 위한 변수
         window.currentAnalysis = null;
         window.selectedPointFromChart = null; 
-        window.splitMinD = 0;
-        window.splitMaxD = 0;
         
         window.fullCsvData = null;
 
@@ -812,7 +813,7 @@
                 sma: smaData,
                 disparity: disparityData,
                 mulrim: displayMulrimData,
-                tradeActions: cashHistory, // typo fix internally if needed
+                tradeActions: tradeActions,
                 cash: cashHistory,
                 stock: stockHistory,
                 capital: capitalHistory,
@@ -1147,308 +1148,6 @@
             URL.revokeObjectURL(url);
         }
 
-        function openTimeseriesModal() {
-            if (!window.currentAnalysis) return alert('먼저 데이터를 계산해주세요.');
-            openModal('timeseries-modal');
-            const ctx = document.getElementById('timeseriesChart').getContext('2d');
-            if (timeseriesChartInstance) timeseriesChartInstance.destroy();
-            timeseriesChartInstance = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: window.currentAnalysis.dates,
-                    datasets: [
-                        { label: '이격 비율 (좌측)', data: window.currentAnalysis.disparity, borderColor: '#000000', yAxisID: 'y', pointRadius: 0, tension: 0.1, spanGaps: true },
-                        { label: '물림일수 (우측)', data: window.currentAnalysis.mulrim, borderColor: '#e74c3c', yAxisID: 'y1', pointRadius: 0, tension: 0.1, spanGaps: true }
-                    ]
-                },
-                options: {
-                    responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-                    plugins: { zoom: zoomPluginX },
-                    scales: {
-                        x: { grid: getYearlyGridConfig(), ticks: getYearlyTicksConfig() },
-                        y: { type: 'linear', position: 'left', title: { display: true, text: '이격비율', color: '#000000' }, min: window.currentAnalysis.minDisp, max: window.currentAnalysis.maxDisp },
-                        y1: { type: 'linear', position: 'right', title: { display: true, text: '물림일수', color: '#e74c3c' }, grid: { drawOnChartArea: false } }
-                    }
-                }
-            });
-        }
-
-        function openScatterModal() {
-            if (!window.currentAnalysis) return alert('먼저 데이터를 계산해주세요.');
-            openModal('scatter-modal');
-            const ctx = document.getElementById('scatterChart').getContext('2d');
-            if (scatterChartInstance) scatterChartInstance.destroy();
-
-            let scatterData = [], scatterColors = [], validIndices = [];
-            for(let i=0; i<window.currentAnalysis.dates.length; i++) {
-                if(window.currentAnalysis.disparity[i] !== null && window.currentAnalysis.mulrim[i] !== null) validIndices.push(i);
-            }
-            const N_valid = validIndices.length;
-            for(let k = 0; k < N_valid; k++) {
-                let i = validIndices[k];
-                scatterData.push({ x: window.currentAnalysis.disparity[i], y: window.currentAnalysis.mulrim[i] });
-                let t = N_valid > 1 ? k / (N_valid - 1) : 0; 
-                let v = t * 4; 
-                let r, g, b;
-                if (v <= 1) { r = 255; g = Math.round(v * 255); b = 0; } 
-                else if (v <= 2) { r = Math.round(255 - (v - 1) * 255); g = 255; b = 0; } 
-                else if (v <= 3) { r = 0; g = 255; b = Math.round((v - 2) * 255); } 
-                else { r = 0; g = Math.round(255 - (v - 3) * 255); b = 255; }
-                scatterColors.push(`rgba(${r}, ${g}, ${b}, 0.6)`);
-            }
-
-            let trendlineData = [
-                { x: window.currentAnalysis.minDisp, y: window.currentAnalysis.slope * window.currentAnalysis.minDisp + window.currentAnalysis.intercept },
-                { x: window.currentAnalysis.maxDisp, y: window.currentAnalysis.slope * window.currentAnalysis.maxDisp + window.currentAnalysis.intercept }
-            ];
-
-            scatterChartInstance = new Chart(ctx, {
-                data: {
-                    datasets: [
-                        { type: 'scatter', label: '과거 데이터 (적색:과거 → 청색:최신)', data: scatterData, backgroundColor: scatterColors, pointRadius: 4, pointHoverRadius: 6 },
-                        { type: 'line', label: '추세선', data: trendlineData, borderColor: '#e74c3c', borderWidth: 2, pointRadius: 0, fill: false }
-                    ]
-                },
-                options: {
-                    responsive: true, maintainAspectRatio: false,
-                    interaction: { mode: 'nearest', intersect: true },
-                    plugins: { 
-                        zoom: zoomPluginXY,
-                        tooltip: { callbacks: { label: function(c) { return `이격도: ${c.parsed.x.toFixed(2)}x, 물림: ${c.parsed.y}일`; } } } 
-                    },
-                    scales: { x: { type: 'linear', position: 'bottom', title: { display: true, text: '이격비율' } }, y: { title: { display: true, text: '물림일수' }, beginAtZero: true } }
-                }
-            });
-        }
-
-        function openDistributionModal() {
-            if (!window.currentAnalysis || !window.currentAnalysis.validDisparities || window.currentAnalysis.validDisparities.length === 0) {
-                return alert('먼저 데이터를 계산해주세요.');
-            }
-            
-            openModal('dist-modal');
-            document.getElementById('dist-calc-result').style.display = 'none'; 
-            
-            const disparities = window.currentAnalysis.validDisparities;
-            let sum = 0, sqSum = 0;
-            for(let d of disparities) { sum += d; }
-            let mean = sum / disparities.length;
-            for(let d of disparities) { sqSum += (d - mean) ** 2; }
-            let stdDev = Math.sqrt(sqSum / disparities.length);
-
-            let min = Math.min(...disparities);
-            let max = Math.max(...disparities);
-            
-            let bins = 60; 
-            let binWidth = (max - min) / bins;
-            let counts = new Array(bins).fill(0);
-
-            for(let d of disparities) {
-                let index = Math.floor((d - min) / binWidth);
-                if(index >= bins) index = bins - 1; 
-                if(index < 0) index = 0;
-                counts[index]++;
-            }
-
-            let labels = [];
-            let histData = [];
-            let normData = [];
-            let total = disparities.length;
-
-            for(let i=0; i<bins; i++) {
-                let binMid = min + (i + 0.5) * binWidth;
-                labels.push(binMid.toFixed(2));
-                
-                let density = counts[i] / (total * binWidth);
-                histData.push(density);
-                
-                let normPdf = (1 / (stdDev * Math.sqrt(2 * Math.PI))) * Math.exp(-0.5 * Math.pow((binMid - mean)/stdDev, 2));
-                normData.push(normPdf);
-            }
-
-            const ctx = document.getElementById('distChart').getContext('2d');
-            if (distChartInstance) distChartInstance.destroy();
-            
-            distChartInstance = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: labels,
-                    datasets: [
-                        {
-                            type: 'bar',
-                            label: '실제 분포 (히스토그램 밀도)',
-                            data: histData,
-                            backgroundColor: 'rgba(0, 0, 0, 0.4)', 
-                            borderColor: '#000000',
-                            borderWidth: 1,
-                            barPercentage: 1.0,
-                            categoryPercentage: 1.0
-                        },
-                        {
-                            type: 'line',
-                            label: '정규분포 곡선 (PDF)',
-                            data: normData,
-                            borderColor: 'rgba(231, 76, 60, 1)',
-                            borderWidth: 2,
-                            pointRadius: 0,
-                            fill: false,
-                            tension: 0.4
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: { mode: 'index', intersect: false },
-                    plugins: {
-                        zoom: zoomPluginX,
-                        tooltip: {
-                            callbacks: {
-                                title: function(ctx) { return '이격도: ' + ctx[0].label + 'x 구간'; },
-                                label: function(ctx) {
-                                    return ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(4);
-                                }
-                            }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            title: { display: true, text: '이격 비율' }
-                        },
-                        y: {
-                            title: { display: true, text: '확률 밀도 (Density)' },
-                            beginAtZero: true
-                        }
-                    }
-                }
-            });
-            
-            calcDistributionPercentile();
-        }
-
-        function inverseNormalCDF(p) {
-            if (p <= 0.0) return -Infinity;
-            if (p >= 1.0) return Infinity;
-            let t, z;
-            if (p < 0.5) {
-                t = Math.sqrt(-2.0 * Math.log(p));
-            } else {
-                t = Math.sqrt(-2.0 * Math.log(1.0 - p));
-            }
-            let c0 = 2.515517, c1 = 0.802853, c2 = 0.010328;
-            let d1 = 1.432788, d2 = 0.189269, d3 = 0.001308;
-            z = t - ((c2 * t + c1) * t + c0) / (((d3 * t + d2) * t + d1) * t + 1.0);
-            return p < 0.5 ? -z : z;
-        }
-
-        function calcDistributionPercentile() {
-            let val = parseFloat(document.getElementById('dist-percent-input').value);
-            let p = val / 100;
-            if (isNaN(p) || p <= 0 || p >= 1) return alert("0보다 크고 100보다 작은 올바른 %를 입력해주세요.");
-
-            const disparities = window.currentAnalysis.validDisparities;
-            let sum = 0, sqSum = 0;
-            for(let d of disparities) { sum += d; }
-            let mean = sum / disparities.length;
-            for(let d of disparities) { sqSum += (d - mean) ** 2; }
-            let stdDev = Math.sqrt(sqSum / disparities.length);
-
-            let z = inverseNormalCDF(p);
-            let expectedDisparity = mean + z * stdDev;
-
-            let sortedDisp = disparities.slice().sort((a,b) => a - b);
-            let targetIndex = Math.floor(p * sortedDisp.length);
-            if (targetIndex >= sortedDisp.length) targetIndex = sortedDisp.length - 1;
-            let actualDisparity = sortedDisp[targetIndex];
-
-            const resDiv = document.getElementById('dist-calc-result');
-            resDiv.style.display = 'block';
-            resDiv.innerHTML = 
-                `-infinity 부터 누적 하위 <span style="color:#e74c3c; font-size:18px; font-weight:bold;">${val}%</span> 지점 타점 분석:<br>` +
-                `<div style="margin-top:10px; background:#e8f4f8; padding:10px; border-radius:6px; border:1px solid #bce8f1;">` +
-                `✅ <strong>실제 데이터 기준:</strong> 이격도 <span style="color:#27ae60; font-size:18px; font-weight:bold;">${actualDisparity.toFixed(4)}x</span> 이하<br>` +
-                `<span style="font-size:13px; color:#7f8c8d;">(과거 전체 데이터 중 정확히 하위 ${val}%에 해당하는 실제 수치)</span>` +
-                `</div>` +
-                `<div style="margin-top:5px; background:#fdfbf7; padding:10px; border-radius:6px; border:1px solid #f5b041;">` +
-                `📉 <strong>정규분포 가정시:</strong> 이격도 <span style="color:#d35400; font-size:18px; font-weight:bold;">${expectedDisparity.toFixed(4)}x</span> 이하<br>` +
-                `<span style="font-size:13px; color:#7f8c8d;">(수학적 정규분포 모형으로 계산한 이론적 수치)</span>` +
-                `</div>`;
-        }
-
-        function getFastR2ForPeriod(period) {
-            const N = cachedData.prices.length;
-            let validX = [], validY = [], sum = 0;
-            for (let i = 0; i < N; i++) {
-                sum += cachedData.prices[i];
-                if (i >= period) sum -= cachedData.prices[i - period];
-                if (i >= period - 1) {
-                    let avg = sum / period;
-                    if (avg > 0) {
-                        let disparity = cachedData.prices[i] / avg;
-                        if ((N - 1) - i >= cachedData.maxMulrim && Number.isFinite(disparity)) {
-                            validX.push(disparity); validY.push(cachedData.rawMulrimData[i]);
-                        }
-                    }
-                }
-            }
-            if (validX.length < 30) return 0; 
-            let sumX = 0, sumY = 0;
-            for (let i = 0; i < validX.length; i++) { sumX += validX[i]; sumY += validY[i]; }
-            let meanX = sumX / validX.length, meanY = sumY / validY.length;
-            let covXY = 0, varX = 0, varY = 0;
-            for (let i = 0; i < validX.length; i++) {
-                let dx = validX[i] - meanX, dy = validY[i] - meanY;
-                covXY += dx * dy; varX += dx * dx; varY += dy * dy;
-            }
-            if (varX > 0 && varY > 0) return (covXY / Math.sqrt(varX * varY)) ** 2;
-            return 0;
-        }
-
-        function openOptimizer() {
-            if (!cachedData) return alert('먼저 데이터를 불러와주세요.');
-            openModal('optimizer-modal');
-            document.getElementById('opt-apply-btn').style.display = 'none';
-            document.getElementById('opt-result-text').innerText = '연산 중입니다...';
-            if (optChartInstance) optChartInstance.destroy();
-            setTimeout(() => { runOptimization(); }, 50);
-        }
-
-        function runOptimization() {
-            const maxTestPeriod = Math.min(3000, cachedData.prices.length - cachedData.maxMulrim - 30);
-            if (maxTestPeriod < 1) { closeModal('optimizer-modal'); return alert("데이터가 부족합니다."); }
-            let labels = [], r2Data = [], maxR2 = -1, bestPeriod = 1; 
-            for (let p = 1; p <= maxTestPeriod; p += 1) {
-                let r2 = getFastR2ForPeriod(p);
-                labels.push(p); r2Data.push(r2);
-                if (r2 > maxR2) { maxR2 = r2; bestPeriod = p; }
-            }
-            bestOptimizedPeriod = bestPeriod;
-            
-            const ctx = document.getElementById('optimizerChart').getContext('2d');
-            let pointColors = labels.map(l => l === bestPeriod ? '#e74c3c' : '#3498db');
-            let pointRadius = labels.map(l => l === bestPeriod ? 6 : 0);
-            optChartInstance = new Chart(ctx, {
-                type: 'line',
-                data: { labels: labels, datasets: [{ label: 'R²', data: r2Data, borderColor: '#3498db', backgroundColor: 'rgba(52,152,219,0.1)', borderWidth: 2, pointBackgroundColor: pointColors, pointBorderColor: pointColors, pointRadius: pointRadius, fill: true }] },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { zoom: zoomPluginX } }
-            });
-            document.getElementById('opt-result-text').innerHTML = `최적 기준일수: <span style="color:#e74c3c; font-size:20px;">${bestPeriod}일</span> (R² = ${maxR2.toFixed(4)})`;
-            document.getElementById('opt-apply-btn').style.display = 'inline-block';
-        }
-
-        function openTradeOptimizer() {
-            if (!cachedData) return alert('먼저 데이터를 불러와주세요.');
-            openModal('trade-optimizer-modal');
-            
-            window.selectedPointFromChart = null;
-            document.getElementById('custom-apply-btn').disabled = true;
-
-            document.getElementById('trade-opt-apply-btn').style.display = 'none';
-            document.getElementById('trade-opt-result-text').innerText = '수만 가지 조합의 딥 시뮬레이션을 진행 중입니다...';
-            setTimeout(() => { runTradeOptimization(); }, 100);
-        }
-
-        // 특정 좌표에서 실패 타점(Bad Point)까지의 최단 거리(반지름)를 계산하는 함수
         function getTradeRadius(pX, pY, badPts) {
             if (!badPts || badPts.length === 0) return 0;
             let minSq = Infinity;
@@ -1460,7 +1159,6 @@
             return Math.sqrt(minSq);
         }
 
-        // 원 둘레 데이터를 생성하는 함수
         function generateCircleData(cx, cy, r, steps = 100) {
             if (r <= 0) return [];
             let data = [];
@@ -1469,6 +1167,19 @@
                 data.push({ x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) });
             }
             return data;
+        }
+
+        function openTradeOptimizer() {
+            if (!cachedData) return alert('먼저 데이터를 불러와주세요.');
+            openModal('trade-optimizer-modal');
+            
+            window.selectedPointFromChart = null;
+            document.getElementById('custom-apply-btn').disabled = true;
+
+            document.getElementById('trade-opt-apply-btn').style.display = 'none';
+            document.getElementById('stable-opt-apply-btn').style.display = 'none';
+            document.getElementById('trade-opt-result-text').innerText = '수만 가지 조합의 딥 시뮬레이션을 진행 중입니다...';
+            setTimeout(() => { runTradeOptimization(); }, 100);
         }
 
         function runTradeOptimization() {
@@ -1519,18 +1230,26 @@
             const baseCagr = (Math.pow(baseLatestPrice / baseInitialPrice, 1 / totalYears) - 1) * 100;
 
             let step = 0.05; 
-            let startD = Math.floor(minD * 100) / 100;
-            let endD = Math.ceil(maxD * 100) / 100;
+            
+            // L과 H를 만들기 위한 완벽한 Grid 맞춤 계산
+            let startD = Math.floor(minD / step) * step;
+            let endD = Math.ceil(maxD / step) * step;
+
+            let actualStartD = startD - step; // L (최소보다 한 스텝 아래)
+            let actualEndD = endD + step;     // H (최대보다 한 스텝 위)
+
+            // 전역 윈도우에 기억하여 툴팁과 축에서 L, H 텍스트 포맷을 도와주게 함
+            window.currentOptBounds = { L: actualStartD, H: actualEndD };
 
             let xLabels = []; 
             let yLabels = []; 
             
-            for (let b = startD; b <= endD - step; b += step) xLabels.push(parseFloat(b.toFixed(2)));
-            for (let s = startD + step; s <= endD; s += step) yLabels.push(parseFloat(s.toFixed(2)));
+            for (let b = actualStartD; b <= actualEndD + 0.001; b += step) xLabels.push(parseFloat(b.toFixed(2)));
+            for (let s = actualStartD; s <= actualEndD + 0.001; s += step) yLabels.push(parseFloat(s.toFixed(2)));
 
             let results = [];
             let goodPoints = [];
-            let badPoints = [];
+            let badPoints = []; // 효용성 0 이하인 Point들
             let maxFinalCapital = -1;
             let minFinalCapital = Infinity;
             let bestBuy = 0, bestSell = 0;
@@ -1571,6 +1290,7 @@
                     let item = { buy: buyPt, sell: sellPt, v: finalCap, utility: utility, cagr: strategyCagr };
                     results.push(item);
 
+                    // 효용성이 0보다 커야지만 Good Point
                     if (utility > 0) {
                         goodPoints.push(item);
                     } else {
@@ -1604,9 +1324,7 @@
                         for (let j = 0; j < badPoints.length; j++) {
                             let b = badPoints[j];
                             let distSq = Math.pow(p.sell - b.sell, 2) + Math.pow(p.buy - b.buy, 2);
-                            if (distSq < minDistSq) {
-                                minDistSq = distSq;
-                            }
+                            if (distSq < minDistSq) minDistSq = distSq;
                         }
                         
                         if (minDistSq > maxMinDistSq + 1e-9) { 
@@ -1645,7 +1363,6 @@
                 }
             }
             
-            // 만약 특이한 케이스로 안정 지점을 못 찾았다면, 에러가 나지 않도록 유효성 검사 및 폴백 처리
             if (!bestStablePoint && goodPoints.length > 0) {
                 bestStablePoint = goodPoints.reduce((max, p) => p.cagr > max.cagr ? p : max, goodPoints[0]);
             } else if (!bestStablePoint && results.length > 0) {
@@ -1655,16 +1372,16 @@
             bestOptimizedBuy = bestBuy;
             bestOptimizedSell = bestSell;
 
-            // 차트에 출력할 안정 원(Circle) 데이터 계산
             let stableCircleData = [];
             if (bestStablePoint) {
+                bestStableBuy = bestStablePoint.buy;
+                bestStableSell = bestStablePoint.sell;
                 let r = getTradeRadius(bestStablePoint.sell, bestStablePoint.buy, badPoints);
                 stableCircleData = generateCircleData(bestStablePoint.sell, bestStablePoint.buy, r);
             }
 
             let scatterData = [];
             let scatterColors = [];
-            
             for (let item of results) {
                 scatterData.push({ x: item.sell, y: item.buy });
                 scatterColors.push(getTradeColor(item.v, maxFinalCapital, minFinalCapital, 0.8));
@@ -1673,7 +1390,14 @@
             const ctx = document.getElementById('tradeOptimizerChart').getContext('2d');
             if (tradeOptChartInstance) tradeOptChartInstance.destroy();
 
-            // 차트 텍스트 렌더링 함수
+            // L, H 값을 이쁘게 포매팅 해주는 헬퍼 함수
+            const formatLH = (v) => {
+                if (!window.currentOptBounds) return v.toFixed(2) + 'x';
+                if (Math.abs(v - window.currentOptBounds.L) < 0.01) return `L (${v.toFixed(2)})`;
+                if (Math.abs(v - window.currentOptBounds.H) < 0.01) return `H (${v.toFixed(2)})`;
+                return v.toFixed(2) + 'x';
+            };
+
             const updateResultText = (selectedItem = null, selectedRadius = 0) => {
                 let maxStrategyCagr = (Math.pow(maxFinalCapital / initCap, 1 / totalYears) - 1) * 100;
                 let maxUtility = (((1 + maxStrategyCagr / 100) / (1 + baseCagr / 100)) - 1) * 100;
@@ -1687,7 +1411,7 @@
                     let stableR = getTradeRadius(bestStablePoint.sell, bestStablePoint.buy, badPoints);
                     stableSectionHtml = 
                         `<br><br><strong style="color:#000000; font-size:16px;">최고 안정 지점 🟢</strong><br>` +
-                        `매수 <span style="color:#e74c3c; font-weight:bold;">${bestStablePoint.buy.toFixed(2)}x</span> 이하 / 매도 <span style="color:#3498db; font-weight:bold;">${bestStablePoint.sell.toFixed(2)}x</span> 이상<br>` +
+                        `매수 <span style="color:#e74c3c; font-weight:bold;">${formatLH(bestStablePoint.buy)}</span> 이하 / 매도 <span style="color:#3498db; font-weight:bold;">${formatLH(bestStablePoint.sell)}</span> 이상<br>` +
                         `<span style="font-size:13px; color:#7f8c8d;">(안전 반경: ${stableR.toFixed(2)})</span><br>` +
                         `<span style="color:${stableColor}; font-weight:bold;">효용성: ${bestStablePoint.utility.toFixed(2)}% / CAGR: ${bestStablePoint.cagr.toFixed(2)}%</span>`;
                 } else {
@@ -1699,8 +1423,8 @@
                 let html = 
                     `<strong style="color:#000000; font-size:16px;">단순 Buy&Hold</strong><br>` +
                     `<span style="color:${baseColor}; font-weight:bold;">효용성: 0.00% / CAGR: ${baseCagr.toFixed(2)}%</span><br><br>` +
-                    `<strong style="color:#000000; font-size:16px;">최고 효율 지점</strong><br>` +
-                    `매수 <span style="color:#e74c3c; font-weight:bold;">${bestBuy.toFixed(2)}x</span> 이하 / 매도 <span style="color:#3498db; font-weight:bold;">${bestSell.toFixed(2)}x</span> 이상<br>` +
+                    `<strong style="color:#000000; font-size:16px;">최고 효율 지점 🚀</strong><br>` +
+                    `매수 <span style="color:#e74c3c; font-weight:bold;">${formatLH(bestBuy)}</span> 이하 / 매도 <span style="color:#3498db; font-weight:bold;">${formatLH(bestSell)}</span> 이상<br>` +
                     `<span style="color:${maxColor}; font-weight:bold;">효용성: ${maxUtility.toFixed(2)}% / CAGR: ${maxStrategyCagr.toFixed(2)}%</span>` +
                     stableSectionHtml;
 
@@ -1708,7 +1432,7 @@
                     let itemColor = getTradeColor(selectedItem.v, maxFinalCapital, minFinalCapital, 1.0);
                     html += `<br><br>` +
                             `<strong style="color:#000000; font-size:16px;">선택된 타점 🟣</strong><br>` +
-                            `매수 <span style="color:#e74c3c; font-weight:bold;">${selectedItem.buy.toFixed(2)}x</span> 이하 / 매도 <span style="color:#3498db; font-weight:bold;">${selectedItem.sell.toFixed(2)}x</span> 이상<br>` +
+                            `매수 <span style="color:#e74c3c; font-weight:bold;">${formatLH(selectedItem.buy)}</span> 이하 / 매도 <span style="color:#3498db; font-weight:bold;">${formatLH(selectedItem.sell)}</span> 이상<br>` +
                             `<span style="font-size:13px; color:#7f8c8d;">(안전 반경: ${selectedRadius.toFixed(2)})</span><br>` +
                             `<span style="color:${itemColor}; font-weight:bold;">효용성: ${selectedItem.utility.toFixed(2)}% / CAGR: ${selectedItem.cagr.toFixed(2)}%</span>`;
                 }
@@ -1727,11 +1451,11 @@
                             pointStyle: 'rect',
                             pointRadius: 6,
                             pointHoverRadius: 8,
-                            order: 3 // 포인트들을 제일 아래 깔거나 위로 올리기 위한 값
+                            order: 3 
                         },
                         {
                             type: 'line',
-                            label: '최고 안정 지점 영역 🟢',
+                            label: '최고 안정 지점 🟢',
                             data: stableCircleData,
                             borderColor: 'rgba(46, 204, 113, 0.9)',
                             backgroundColor: 'rgba(46, 204, 113, 0.15)',
@@ -1746,8 +1470,8 @@
                         },
                         {
                             type: 'line',
-                            label: '선택 타점 영역 🟣',
-                            data: [], // 클릭 시 채워짐
+                            label: '선택 타점 🟣',
+                            data: [], 
                             borderColor: 'rgba(155, 89, 182, 0.9)',
                             backgroundColor: 'rgba(155, 89, 182, 0.15)',
                             borderWidth: 2,
@@ -1767,14 +1491,11 @@
                     onClick: function(e, elements) {
                         if (elements.length > 0) {
                             const idx = elements[0].index;
-                            
-                            // 클릭한 요소가 산점도 데이터(datasetIndex === 0)일 때만 작동
                             if (elements[0].datasetIndex === 0) {
                                 const item = results[idx];
                                 window.selectedPointFromChart = { buy: item.buy, sell: item.sell };
                                 document.getElementById('custom-apply-btn').disabled = false;
                                 
-                                // 선택 타점 원 둘레 계산 및 차트 업데이트
                                 let selRadius = getTradeRadius(item.sell, item.buy, badPoints);
                                 tradeOptChartInstance.data.datasets[2].data = generateCircleData(item.sell, item.buy, selRadius);
                                 tradeOptChartInstance.update();
@@ -1786,35 +1507,69 @@
                     plugins: {
                         zoom: zoomPluginXY,
                         tooltip: {
-                            // 산점도 포인트에만 툴팁 표시
-                            filter: function(tooltipItem) {
-                                return tooltipItem.datasetIndex === 0;
-                            },
+                            filter: function(tooltipItem) { return tooltipItem.datasetIndex === 0; },
                             callbacks: {
                                 label: function(context) {
                                     let idx = context.dataIndex;
                                     let utility = results[idx].utility;
                                     let cagr = results[idx].cagr;
-                                    return `매도: ${context.parsed.x.toFixed(2)}x, 매수: ${context.parsed.y.toFixed(2)}x | 효용성: ${utility.toFixed(2)}% (CAGR: ${cagr.toFixed(2)}%)`;
+                                    
+                                    let strX = Math.abs(context.parsed.x - window.currentOptBounds.L) < 0.01 ? `L (${context.parsed.x.toFixed(2)})` : 
+                                               (Math.abs(context.parsed.x - window.currentOptBounds.H) < 0.01 ? `H (${context.parsed.x.toFixed(2)})` : context.parsed.x.toFixed(2));
+                                    let strY = Math.abs(context.parsed.y - window.currentOptBounds.L) < 0.01 ? `L (${context.parsed.y.toFixed(2)})` : 
+                                               (Math.abs(context.parsed.y - window.currentOptBounds.H) < 0.01 ? `H (${context.parsed.y.toFixed(2)})` : context.parsed.y.toFixed(2));
+
+                                    return `매도: ${strX}, 매수: ${strY} | 효용성: ${utility.toFixed(2)}% (CAGR: ${cagr.toFixed(2)}%)`;
                                 }
                             }
                         }
                     },
                     scales: {
-                        x: { title: { display: true, text: '매도 기준선 (Sell)' } },
-                        y: { title: { display: true, text: '매수 기준선 (Buy)' } }
+                        x: { 
+                            title: { display: true, text: '매도 기준선 (Sell)' },
+                            ticks: {
+                                callback: function(val, index) {
+                                    let num = parseFloat(val);
+                                    if (window.currentOptBounds) {
+                                        if (Math.abs(num - window.currentOptBounds.L) < 0.01) return 'L (' + num.toFixed(2) + ')';
+                                        if (Math.abs(num - window.currentOptBounds.H) < 0.01) return 'H (' + num.toFixed(2) + ')';
+                                    }
+                                    return num.toFixed(2);
+                                }
+                            }
+                        },
+                        y: { 
+                            title: { display: true, text: '매수 기준선 (Buy)' },
+                            ticks: {
+                                callback: function(val, index) {
+                                    let num = parseFloat(val);
+                                    if (window.currentOptBounds) {
+                                        if (Math.abs(num - window.currentOptBounds.L) < 0.01) return 'L (' + num.toFixed(2) + ')';
+                                        if (Math.abs(num - window.currentOptBounds.H) < 0.01) return 'H (' + num.toFixed(2) + ')';
+                                    }
+                                    return num.toFixed(2);
+                                }
+                            }
+                        }
                     }
                 }
             });
 
-            // 처음 팝업 열렸을 때 기본 렌더링
             updateResultText();
             document.getElementById('trade-opt-apply-btn').style.display = 'inline-block';
+            document.getElementById('stable-opt-apply-btn').style.display = 'inline-block';
         }
 
         function applyTradeOptimization() {
             document.getElementById('buy-point').value = bestOptimizedBuy;
             document.getElementById('sell-point').value = bestOptimizedSell;
+            closeModal('trade-optimizer-modal');
+            calculateAndRender();
+        }
+
+        function applyStableOptimization() {
+            document.getElementById('buy-point').value = bestStableBuy;
+            document.getElementById('sell-point').value = bestStableSell;
             closeModal('trade-optimizer-modal');
             calculateAndRender();
         }
