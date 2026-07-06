@@ -174,7 +174,7 @@
             width: 100%;
             margin-bottom: 20px;
         }
-        .main-chart { height: 45vh; min-height: 350px; }
+        .main-chart { height: 45vh; min-height: 350px; margin-bottom: 5px; } /* 마진 조정 */
         .sub-chart { height: 30vh; min-height: 250px; }
         
         #loading {
@@ -275,8 +275,8 @@
             <p id="trade-opt-result-text" style="font-size:15px; margin:15px 0; line-height: 1.6;">모든 매수/매도 조합을 시뮬레이션 중입니다...</p>
             <div class="modal-actions">
                 <button id="trade-opt-apply-btn" class="btn btn-trade-opt" style="display:none; margin:0;" onclick="applyTradeOptimization()">🚀 최고 효율 타점 적용</button>
-                <button id="stable-opt-apply-btn" class="btn btn-download" style="display:none; margin:0; background-color:#27ae60;" onclick="applyStableOptimization()">🟢 최고 안정 타점 적용</button>
-                <button id="custom-apply-btn" class="btn btn-apply-selected" style="margin:0;" disabled onclick="applySelectedPoint()">🟣 선택 타점 적용</button>
+                <button id="stable-opt-apply-btn" class="btn btn-download" style="display:none; margin:0; background-color:#27ae60;" onclick="applyStableOptimization()">⚫ 최고 안정 타점 적용</button>
+                <button id="custom-apply-btn" class="btn btn-apply-selected" style="margin:0;" disabled onclick="applySelectedPoint()">⚪ 선택 타점 적용</button>
                 <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(tradeOptChartInstance)">🔍 줌/초기화</button>
                 <button class="btn" style="margin:0;" onclick="closeModal('trade-optimizer-modal')">닫기</button>
             </div>
@@ -408,7 +408,7 @@
                 <button class="btn btn-info" onclick="openTimeseriesModal()">📅 이격도 vs 물림일수</button>
                 <button class="btn btn-info" onclick="openScatterModal()">📈 이격-물림 산점도</button>
                 <button class="btn btn-info" onclick="openDistributionModal()">📊 이격도 분포도 보기</button>
-                <button class="btn btn-reset" onclick="resetMainChartsZoom()">🔍 차트 줌 및 정보창 초기화</button>
+                <button class="btn btn-reset" onclick="resetMainChartsZoom()">🔍 차트 줌/초기화</button>
             </div>
         </div>
 
@@ -417,6 +417,10 @@
         
         <div class="chart-wrapper main-chart">
             <canvas id="priceChart"></canvas>
+        </div>
+        
+        <div style="display:flex; justify-content:flex-end; margin-top:-10px; margin-bottom:15px; width:100%;">
+            <button id="toggle-sim-asset-btn" class="btn btn-info" style="font-size:12px; padding:6px 12px; margin:0;" onclick="toggleSimAsset()">📈 시뮬레이션 자산 켜기</button>
         </div>
 
         <div class="chart-wrapper sub-chart">
@@ -482,6 +486,22 @@
         window.selectedPointFromChart = null; 
         
         window.fullCsvData = null;
+        
+        // 자산 켜기/끄기 토글 상태 변수
+        let showSimAsset = false;
+
+        function toggleSimAsset() {
+            showSimAsset = !showSimAsset;
+            const btn = document.getElementById('toggle-sim-asset-btn');
+            if (showSimAsset) {
+                btn.innerHTML = "📉 시뮬레이션 자산 끄기";
+                btn.style.backgroundColor = "#7f8c8d"; // 회색 버튼
+            } else {
+                btn.innerHTML = "📈 시뮬레이션 자산 켜기";
+                btn.style.backgroundColor = "#2980b9"; // 기존 파란색
+            }
+            if (cachedData) calculateAndRender(); // 재계산 및 렌더링 호출
+        }
 
         function getTradeColor(cap, maxCap, minCap, alpha = 1.0) {
             if (maxCap === minCap) return `rgba(255, 0, 0, ${alpha})`;
@@ -917,13 +937,20 @@
                 evalPanel.style.display = 'block';
             }
 
+            // 시뮬레이션 자산(1배수 기준) 계산
+            let normalizedCapital = new Array(N).fill(null);
+            for (let i = firstValidIdx; i < N; i++) {
+                normalizedCapital[i] = capitalHistory[i] / initialCap;
+            }
+
             renderPriceChart(
                 cachedData.dates.slice(firstValidIdx), 
                 cachedData.prices.slice(firstValidIdx), 
                 priceAvgDisparityLineData.slice(firstValidIdx), 
                 priceBuyLineData.slice(firstValidIdx), 
                 priceSellLineData.slice(firstValidIdx), 
-                avgDisparity, period
+                avgDisparity, period,
+                normalizedCapital.slice(firstValidIdx) // 정규화된 자산 데이터 전달
             );
             
             renderDisparityChart(
@@ -995,46 +1022,88 @@
             };
         }
 
-        function renderPriceChart(labels, priceData, priceAvgLineData, priceBuyLineData, priceSellLineData, avgDisparity, period) {
+        function renderPriceChart(labels, priceData, priceAvgLineData, priceBuyLineData, priceSellLineData, avgDisparity, period, simAssetData) {
             const ctx = document.getElementById('priceChart').getContext('2d');
             if (priceChartInstance) priceChartInstance.destroy();
+            
+            let chartDatasets = [
+                { label: `수정종가`, data: priceData, borderColor: '#000000', backgroundColor: 'rgba(0, 0, 0, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, order: 2 },
+                { label: `평균 이격도 (${avgDisparity.toFixed(2)}x)`, data: priceAvgLineData, borderColor: '#8e44ad', borderDash: [5, 5], borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 3 },
+                { label: `매도선`, data: priceSellLineData, borderColor: '#3498db', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 4 },
+                { label: `매수선`, data: priceBuyLineData, borderColor: '#e74c3c', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 5 }
+            ];
+
+            let chartScales = { 
+                x: { grid: getYearlyGridConfig(), ticks: getYearlyTicksConfig() }, 
+                y: { 
+                    type: 'logarithmic', 
+                    display: true, 
+                    position: 'left', 
+                    title: { display: true, text: '가격(로그)', color: '#333' },
+                    afterBuildTicks: function(axis) {
+                        const ticks = [];
+                        const minVal = axis.min > 0 ? axis.min : 0.01;
+                        const maxVal = axis.max > 0 ? axis.max : 10000000;
+                        const minLog = Math.floor(Math.log2(minVal));
+                        const maxLog = Math.ceil(Math.log2(maxVal));
+                        for (let i = minLog; i <= maxLog; i++) {
+                            ticks.push({ value: Math.pow(2, i) });
+                        }
+                        axis.ticks = ticks;
+                    },
+                    ticks: {
+                        callback: function(value) { return value < 1 ? value.toFixed(3) : value.toLocaleString(); }
+                    }
+                } 
+            };
+
+            // 시뮬레이션 자산이 켜져있다면 우측 보조 축과 라인 추가
+            if (showSimAsset && simAssetData) {
+                chartDatasets.push({
+                    label: `시뮬레이션 자산 (우측 축)`,
+                    data: simAssetData,
+                    borderColor: '#27ae60', // 녹색
+                    backgroundColor: 'rgba(39, 174, 96, 0.1)',
+                    borderWidth: 2.5,
+                    pointRadius: 0,
+                    tension: 0.1,
+                    yAxisID: 'y1',
+                    order: 1 // 가장 위에 그려지도록 설정
+                });
+
+                chartScales.y1 = {
+                    type: 'logarithmic', 
+                    display: true, 
+                    position: 'right', 
+                    title: { display: true, text: '자산 배수(로그)', color: '#27ae60' },
+                    grid: { drawOnChartArea: false },
+                    afterBuildTicks: function(axis) {
+                        const ticks = [];
+                        const minVal = axis.min > 0 ? axis.min : 0.01;
+                        const maxVal = axis.max > 0 ? axis.max : 10000;
+                        const minLog = Math.floor(Math.log2(minVal));
+                        const maxLog = Math.ceil(Math.log2(maxVal));
+                        for (let i = minLog; i <= maxLog; i++) {
+                            ticks.push({ value: Math.pow(2, i) });
+                        }
+                        axis.ticks = ticks;
+                    },
+                    ticks: {
+                        callback: function(value) { return value < 1 ? value.toFixed(2) + 'x' : value.toLocaleString() + 'x'; }
+                    }
+                };
+            }
+
             priceChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: labels,
-                    datasets: [
-                        { label: `수정종가`, data: priceData, borderColor: '#000000', backgroundColor: 'rgba(0, 0, 0, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.1, order: 1 },
-                        { label: `평균 이격도 (${avgDisparity.toFixed(2)}x)`, data: priceAvgLineData, borderColor: '#8e44ad', borderDash: [5, 5], borderWidth: 2, pointRadius: 0, tension: 0.1, spanGaps: true, order: 2 },
-                        { label: `매도선`, data: priceSellLineData, borderColor: '#3498db', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 3 },
-                        { label: `매수선`, data: priceBuyLineData, borderColor: '#e74c3c', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, tension: 0.1, spanGaps: true, order: 4 }
-                    ]
+                    datasets: chartDatasets
                 },
                 options: { 
                     responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, 
                     plugins: { zoom: zoomPluginX },
-                    scales: { 
-                        x: { grid: getYearlyGridConfig(), ticks: getYearlyTicksConfig() }, 
-                        y: { 
-                            type: 'logarithmic', 
-                            display: true, 
-                            position: 'left', 
-                            title: { display: true, text: '가격(로그)', color: '#333' },
-                            afterBuildTicks: function(axis) {
-                                const ticks = [];
-                                const minVal = axis.min > 0 ? axis.min : 0.01;
-                                const maxVal = axis.max > 0 ? axis.max : 10000000;
-                                const minLog = Math.floor(Math.log2(minVal));
-                                const maxLog = Math.ceil(Math.log2(maxVal));
-                                for (let i = minLog; i <= maxLog; i++) {
-                                    ticks.push({ value: Math.pow(2, i) });
-                                }
-                                axis.ticks = ticks;
-                            },
-                            ticks: {
-                                callback: function(value) { return value < 1 ? value.toFixed(3) : value.toLocaleString(); }
-                            }
-                        } 
-                    } 
+                    scales: chartScales
                 }
             });
         }
@@ -1426,7 +1495,7 @@
             const resDiv = document.getElementById('dist-calc-result');
             resDiv.style.display = 'block';
             resDiv.innerHTML = 
-                `-infinity 부터 누적 하위 <span style="color:#e74c3c; font-size:18px; font-weight:bold;">${val}%</span> 지점 타점 분석:<br>` +
+                `-∞ 부터 누적 하위 <span style="color:#e74c3c; font-size:18px; font-weight:bold;">${val}%</span> 지점 타점 분석:<br>` +
                 `<div style="margin-top:10px; background:#e8f4f8; padding:10px; border-radius:6px; border:1px solid #bce8f1;">` +
                 `✅ <strong>실제 데이터 기준:</strong> 이격도 <span style="color:#27ae60; font-size:18px; font-weight:bold;">${actualDisparity.toFixed(4)}x</span> 이하<br>` +
                 `<span style="font-size:13px; color:#7f8c8d;">(과거 전체 데이터 중 정확히 하위 ${val}%에 해당하는 실제 수치)</span>` +
@@ -1546,7 +1615,7 @@
                 for (let j = 0; j < xLabels.length; j++) {
                     let buyPt = xLabels[j];
                     
-                    // 논리적으로 불가한 타점(매수가 매도보다 높거나 같음)을 다시 투명한 벽(장애물)으로 설정합니다.
+                    // 논리적으로 불가한 타점(매수 >= 매도)은 차트 표기 여부와 상관없이 다시 엄격하게 투명한 벽(장애물)으로 설정합니다.
                     if (buyPt >= sellPt) {
                         badPoints.push({ buy: buyPt, sell: sellPt, v: 0, utility: 0, cagr: 0 });
                         continue; 
@@ -1579,7 +1648,7 @@
                     let item = { buy: buyPt, sell: sellPt, v: finalCap, utility: utility, cagr: strategyCagr };
                     results.push(item);
 
-                    // 표기 가능하면서 효용성 0 이하인 '진짜 실패 타점'들도 장애물(badPoints)에 추가됩니다.
+                    // 효용성 0 이하면 장애물(badPoints)에 추가
                     if (utility > 0) {
                         goodPoints.push(item);
                     } else {
@@ -1700,13 +1769,13 @@
                     let stableColor = getTradeColor(bestStablePoint.v, maxFinalCapital, minFinalCapital, 1.0);
                     let stableR = getTradeRadius(bestStablePoint.sell, bestStablePoint.buy, badPoints);
                     stableSectionHtml = 
-                        `<br><br><strong style="color:#000000; font-size:16px;">최고 안정 지점 🟢</strong><br>` +
+                        `<br><br><strong style="color:#000000; font-size:16px;">최고 안정 지점 ⚫</strong><br>` +
                         `매수 <span style="color:#e74c3c; font-weight:bold;">${formatLH(bestStablePoint.buy)}</span> 이하 / 매도 <span style="color:#3498db; font-weight:bold;">${formatLH(bestStablePoint.sell)}</span> 이상<br>` +
                         `<span style="font-size:13px; color:#7f8c8d;">(안전 반경: ${stableR.toFixed(2)})</span><br>` +
                         `<span style="color:${stableColor}; font-weight:bold;">효용성: ${bestStablePoint.utility.toFixed(2)}% / CAGR: ${bestStablePoint.cagr.toFixed(2)}%</span>`;
                 } else {
                     stableSectionHtml = 
-                        `<br><br><strong style="color:#000000; font-size:16px;">최고 안정 지점 🟢</strong><br>` +
+                        `<br><br><strong style="color:#000000; font-size:16px;">최고 안정 지점 ⚫</strong><br>` +
                         `<span style="color:#7f8c8d; font-weight:bold;">계산할 수 있는 안정 지점 데이터가 부족합니다.</span>`;
                 }
 
@@ -1722,7 +1791,7 @@
                 if (selectedItem) {
                     let itemColor = getTradeColor(selectedItem.v, maxFinalCapital, minFinalCapital, 1.0);
                     html += `<br><br>` +
-                            `<strong style="color:#000000; font-size:16px;">선택된 타점 🟣</strong><br>` +
+                            `<strong style="color:#000000; font-size:16px;">선택된 타점 ⚪</strong><br>` +
                             `매수 <span style="color:#e74c3c; font-weight:bold;">${formatLH(selectedItem.buy)}</span> 이하 / 매도 <span style="color:#3498db; font-weight:bold;">${formatLH(selectedItem.sell)}</span> 이상<br>` +
                             `<span style="font-size:13px; color:#7f8c8d;">(안전 반경: ${selectedRadius.toFixed(2)})</span><br>` +
                             `<span style="color:${itemColor}; font-weight:bold;">효용성: ${selectedItem.utility.toFixed(2)}% / CAGR: ${selectedItem.cagr.toFixed(2)}%</span>`;
@@ -1746,10 +1815,10 @@
                         },
                         {
                             type: 'line',
-                            label: '최고 안정 지점 🟢',
+                            label: '최고 안정 지점 ⚫',
                             data: stableCircleData,
-                            borderColor: 'rgba(46, 204, 113, 0.9)',
-                            backgroundColor: 'rgba(46, 204, 113, 0.15)',
+                            borderColor: 'rgba(0, 0, 0, 0.9)', // 검정색
+                            backgroundColor: 'rgba(0, 0, 0, 0.1)',
                             borderWidth: 2,
                             borderDash: [5, 5],
                             pointRadius: 0,
@@ -1761,10 +1830,10 @@
                         },
                         {
                             type: 'line',
-                            label: '선택 타점 🟣',
+                            label: '선택 타점 ⚪',
                             data: [], 
-                            borderColor: 'rgba(155, 89, 182, 0.9)',
-                            backgroundColor: 'rgba(155, 89, 182, 0.15)',
+                            borderColor: 'rgba(128, 128, 128, 0.9)', // 회색
+                            backgroundColor: 'rgba(128, 128, 128, 0.15)',
                             borderWidth: 2,
                             borderDash: [5, 5],
                             pointRadius: 0,
