@@ -27,7 +27,7 @@
         }
         
         canvas {
-            touch-action: pan-y !important; /* 위아래 스크롤 허용, 좌우는 차트 이동 */
+            touch-action: pan-y !important; 
         }
         #scatterChart, #tradeOptimizerChart, #splitCalcChart, #distChart {
             touch-action: none !important; 
@@ -812,7 +812,7 @@
                 sma: smaData,
                 disparity: disparityData,
                 mulrim: displayMulrimData,
-                tradeActions: tradeActions,
+                tradeActions: cashHistory, // typo fix internally if needed
                 cash: cashHistory,
                 stock: stockHistory,
                 capital: capitalHistory,
@@ -1448,6 +1448,29 @@
             setTimeout(() => { runTradeOptimization(); }, 100);
         }
 
+        // 특정 좌표에서 실패 타점(Bad Point)까지의 최단 거리(반지름)를 계산하는 함수
+        function getTradeRadius(pX, pY, badPts) {
+            if (!badPts || badPts.length === 0) return 0;
+            let minSq = Infinity;
+            for (let i = 0; i < badPts.length; i++) {
+                let b = badPts[i];
+                let dSq = Math.pow(pX - b.sell, 2) + Math.pow(pY - b.buy, 2);
+                if (dSq < minSq) minSq = dSq;
+            }
+            return Math.sqrt(minSq);
+        }
+
+        // 원 둘레 데이터를 생성하는 함수
+        function generateCircleData(cx, cy, r, steps = 100) {
+            if (r <= 0) return [];
+            let data = [];
+            for (let i = 0; i <= steps; i++) {
+                let angle = (i / steps) * 2 * Math.PI;
+                data.push({ x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) });
+            }
+            return data;
+        }
+
         function runTradeOptimization() {
             const period = parseInt(document.getElementById('ma-period').value) || 1500;
             const initCap = 10000;
@@ -1632,6 +1655,13 @@
             bestOptimizedBuy = bestBuy;
             bestOptimizedSell = bestSell;
 
+            // 차트에 출력할 안정 원(Circle) 데이터 계산
+            let stableCircleData = [];
+            if (bestStablePoint) {
+                let r = getTradeRadius(bestStablePoint.sell, bestStablePoint.buy, badPoints);
+                stableCircleData = generateCircleData(bestStablePoint.sell, bestStablePoint.buy, r);
+            }
+
             let scatterData = [];
             let scatterColors = [];
             
@@ -1644,24 +1674,25 @@
             if (tradeOptChartInstance) tradeOptChartInstance.destroy();
 
             // 차트 텍스트 렌더링 함수
-            const updateResultText = (selectedItem = null) => {
+            const updateResultText = (selectedItem = null, selectedRadius = 0) => {
                 let maxStrategyCagr = (Math.pow(maxFinalCapital / initCap, 1 / totalYears) - 1) * 100;
                 let maxUtility = (((1 + maxStrategyCagr / 100) / (1 + baseCagr / 100)) - 1) * 100;
 
                 let maxColor = getTradeColor(maxFinalCapital, maxFinalCapital, minFinalCapital, 1.0);
                 let baseColor = getTradeColor(baseFinalCapital, maxFinalCapital, minFinalCapital, 1.0);
                 
-                // 최고 안정 지점이 성공적으로 찾아졌을 때만 해당 텍스트를 추가하도록 방어적 프로그래밍 적용
                 let stableSectionHtml = '';
                 if (bestStablePoint) {
                     let stableColor = getTradeColor(bestStablePoint.v, maxFinalCapital, minFinalCapital, 1.0);
+                    let stableR = getTradeRadius(bestStablePoint.sell, bestStablePoint.buy, badPoints);
                     stableSectionHtml = 
-                        `<br><br><strong style="color:#000000; font-size:16px;">최고 안정 지점</strong><br>` +
+                        `<br><br><strong style="color:#000000; font-size:16px;">최고 안정 지점 🟢</strong><br>` +
                         `매수 <span style="color:#e74c3c; font-weight:bold;">${bestStablePoint.buy.toFixed(2)}x</span> 이하 / 매도 <span style="color:#3498db; font-weight:bold;">${bestStablePoint.sell.toFixed(2)}x</span> 이상<br>` +
+                        `<span style="font-size:13px; color:#7f8c8d;">(안전 반경: ${stableR.toFixed(2)})</span><br>` +
                         `<span style="color:${stableColor}; font-weight:bold;">효용성: ${bestStablePoint.utility.toFixed(2)}% / CAGR: ${bestStablePoint.cagr.toFixed(2)}%</span>`;
                 } else {
                     stableSectionHtml = 
-                        `<br><br><strong style="color:#000000; font-size:16px;">최고 안정 지점</strong><br>` +
+                        `<br><br><strong style="color:#000000; font-size:16px;">최고 안정 지점 🟢</strong><br>` +
                         `<span style="color:#7f8c8d; font-weight:bold;">계산할 수 있는 안정 지점 데이터가 부족합니다.</span>`;
                 }
 
@@ -1676,8 +1707,9 @@
                 if (selectedItem) {
                     let itemColor = getTradeColor(selectedItem.v, maxFinalCapital, minFinalCapital, 1.0);
                     html += `<br><br>` +
-                            `<strong style="color:#000000; font-size:16px;">선택된 타점</strong><br>` +
+                            `<strong style="color:#000000; font-size:16px;">선택된 타점 🟣</strong><br>` +
                             `매수 <span style="color:#e74c3c; font-weight:bold;">${selectedItem.buy.toFixed(2)}x</span> 이하 / 매도 <span style="color:#3498db; font-weight:bold;">${selectedItem.sell.toFixed(2)}x</span> 이상<br>` +
+                            `<span style="font-size:13px; color:#7f8c8d;">(안전 반경: ${selectedRadius.toFixed(2)})</span><br>` +
                             `<span style="color:${itemColor}; font-weight:bold;">효용성: ${selectedItem.utility.toFixed(2)}% / CAGR: ${selectedItem.cagr.toFixed(2)}%</span>`;
                 }
 
@@ -1687,14 +1719,47 @@
             tradeOptChartInstance = new Chart(ctx, {
                 type: 'scatter',
                 data: {
-                    datasets: [{
-                        label: '효용성 및 자본금 (적색:최고효율 → 청색:최저효율)',
-                        data: scatterData,
-                        backgroundColor: scatterColors,
-                        pointStyle: 'rect',
-                        pointRadius: 6,
-                        pointHoverRadius: 8
-                    }]
+                    datasets: [
+                        {
+                            label: '효용성 및 자본금 (적색:최고효율 → 청색:최저효율)',
+                            data: scatterData,
+                            backgroundColor: scatterColors,
+                            pointStyle: 'rect',
+                            pointRadius: 6,
+                            pointHoverRadius: 8,
+                            order: 3 // 포인트들을 제일 아래 깔거나 위로 올리기 위한 값
+                        },
+                        {
+                            type: 'line',
+                            label: '최고 안정 지점 영역 🟢',
+                            data: stableCircleData,
+                            borderColor: 'rgba(46, 204, 113, 0.9)',
+                            backgroundColor: 'rgba(46, 204, 113, 0.15)',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            pointRadius: 0,
+                            pointHoverRadius: 0,
+                            pointHitRadius: 0,
+                            fill: true,
+                            showLine: true,
+                            order: 2
+                        },
+                        {
+                            type: 'line',
+                            label: '선택 타점 영역 🟣',
+                            data: [], // 클릭 시 채워짐
+                            borderColor: 'rgba(155, 89, 182, 0.9)',
+                            backgroundColor: 'rgba(155, 89, 182, 0.15)',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            pointRadius: 0,
+                            pointHoverRadius: 0,
+                            pointHitRadius: 0,
+                            fill: true,
+                            showLine: true,
+                            order: 1
+                        }
+                    ]
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false,
@@ -1702,16 +1767,29 @@
                     onClick: function(e, elements) {
                         if (elements.length > 0) {
                             const idx = elements[0].index;
-                            const item = results[idx];
-                            window.selectedPointFromChart = { buy: item.buy, sell: item.sell };
-                            document.getElementById('custom-apply-btn').disabled = false;
                             
-                            updateResultText(item);
+                            // 클릭한 요소가 산점도 데이터(datasetIndex === 0)일 때만 작동
+                            if (elements[0].datasetIndex === 0) {
+                                const item = results[idx];
+                                window.selectedPointFromChart = { buy: item.buy, sell: item.sell };
+                                document.getElementById('custom-apply-btn').disabled = false;
+                                
+                                // 선택 타점 원 둘레 계산 및 차트 업데이트
+                                let selRadius = getTradeRadius(item.sell, item.buy, badPoints);
+                                tradeOptChartInstance.data.datasets[2].data = generateCircleData(item.sell, item.buy, selRadius);
+                                tradeOptChartInstance.update();
+                                
+                                updateResultText(item, selRadius);
+                            }
                         }
                     },
                     plugins: {
                         zoom: zoomPluginXY,
                         tooltip: {
+                            // 산점도 포인트에만 툴팁 표시
+                            filter: function(tooltipItem) {
+                                return tooltipItem.datasetIndex === 0;
+                            },
                             callbacks: {
                                 label: function(context) {
                                     let idx = context.dataIndex;
