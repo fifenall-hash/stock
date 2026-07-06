@@ -279,7 +279,7 @@
             <div class="modal-actions">
                 <button id="trade-opt-apply-btn" class="btn btn-trade-opt" style="display:none; margin:0;" onclick="applyTradeOptimization()">최적 타점 적용하기</button>
                 <button id="custom-apply-btn" class="btn btn-apply-selected" style="margin:0;" disabled onclick="applySelectedPoint()">해당 타점 적용하기</button>
-                <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(tradeOptChartInstance)">🔍 줌 초기화</button>
+                <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(tradeOptChartInstance)">🔍 줌 및 정보창 초기화</button>
                 <button class="btn" style="margin:0;" onclick="closeModal('trade-optimizer-modal')">닫기</button>
             </div>
         </div>
@@ -293,7 +293,7 @@
                 <canvas id="timeseriesChart"></canvas>
             </div>
             <div class="modal-actions">
-                <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(timeseriesChartInstance)">🔍 줌 초기화</button>
+                <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(timeseriesChartInstance)">🔍 줌 및 정보창 초기화</button>
                 <button class="btn" style="margin:0;" onclick="closeModal('timeseries-modal')">닫기</button>
             </div>
         </div>
@@ -307,7 +307,7 @@
                 <canvas id="scatterChart"></canvas>
             </div>
             <div class="modal-actions">
-                <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(scatterChartInstance)">🔍 줌 초기화</button>
+                <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(scatterChartInstance)">🔍 줌 및 정보창 초기화</button>
                 <button class="btn" style="margin:0;" onclick="closeModal('scatter-modal')">닫기</button>
             </div>
         </div>
@@ -1516,6 +1516,8 @@
             for (let s = startD + step; s <= endD; s += step) yLabels.push(parseFloat(s.toFixed(2)));
 
             let results = [];
+            let goodPoints = [];
+            let badPoints = [];
             let maxFinalCapital = -1;
             let minFinalCapital = Infinity;
             let bestBuy = 0, bestSell = 0;
@@ -1524,7 +1526,11 @@
                 let sellPt = yLabels[i];
                 for (let j = 0; j < xLabels.length; j++) {
                     let buyPt = xLabels[j];
-                    if (buyPt >= sellPt) continue;
+                    if (buyPt >= sellPt) {
+                        // 논리적으로 불가한 타점(매수가 매도보다 높거나 같음)은 효용성 0 이하의 Bad Point로 취급
+                        badPoints.push({ buy: buyPt, sell: sellPt, v: 0, utility: 0, cagr: 0 });
+                        continue;
+                    }
 
                     let cash = 0;
                     let shares = initCap / cachedData.prices[firstValidIdx];
@@ -1547,11 +1553,17 @@
                     }
                     
                     let finalCap = cash + (shares * cachedData.prices[N - 1]);
-
                     let strategyCagr = (Math.pow(finalCap / initCap, 1 / totalYears) - 1) * 100;
                     let utility = (((1 + strategyCagr / 100) / (1 + baseCagr / 100)) - 1) * 100;
 
-                    results.push({ buy: buyPt, sell: sellPt, v: finalCap, utility: utility, cagr: strategyCagr });
+                    let item = { buy: buyPt, sell: sellPt, v: finalCap, utility: utility, cagr: strategyCagr };
+                    results.push(item);
+
+                    if (utility > 0) {
+                        goodPoints.push(item);
+                    } else {
+                        badPoints.push(item);
+                    }
 
                     if (finalCap > maxFinalCapital) {
                         maxFinalCapital = finalCap;
@@ -1562,6 +1574,70 @@
                         minFinalCapital = finalCap;
                     }
                 }
+            }
+
+            // === 최고 안정 지점 구하기 알고리즘 ===
+            let bestStablePoint = null;
+            if (goodPoints.length > 0) {
+                if (badPoints.length === 0) {
+                    // 모든 타점이 0보다 크면 가장 cagr가 높은 놈 채택
+                    bestStablePoint = goodPoints.reduce((max, p) => p.cagr > max.cagr ? p : max, goodPoints[0]);
+                } else {
+                    let maxMinDistSq = -1;
+                    let candidates = [];
+
+                    for (let i = 0; i < goodPoints.length; i++) {
+                        let p = goodPoints[i];
+                        let minDistSq = Infinity;
+                        
+                        // 가장 가까운 Bad Point 까지의 거리 계산
+                        for (let j = 0; j < badPoints.length; j++) {
+                            let b = badPoints[j];
+                            let distSq = Math.pow(p.sell - b.sell, 2) + Math.pow(p.buy - b.buy, 2);
+                            if (distSq < minDistSq) {
+                                minDistSq = distSq;
+                            }
+                        }
+                        
+                        // 이 최소 거리가 가장 큰 후보(최대 반경 r)들을 찾는다
+                        if (minDistSq > maxMinDistSq + 1e-9) { // Float 오차 허용
+                            maxMinDistSq = minDistSq;
+                            candidates = [p];
+                        } else if (Math.abs(minDistSq - maxMinDistSq) <= 1e-9) {
+                            candidates.push(p);
+                        }
+                    }
+
+                    if (candidates.length === 1) {
+                        bestStablePoint = candidates[0];
+                    } else if (candidates.length > 1) {
+                        // 최대 r값이 가장 큰 후보가 둘 이상인 경우 평균 cagr이 높은 쪽 채택
+                        let bestAvgCagr = -Infinity;
+                        for (let i = 0; i < candidates.length; i++) {
+                            let c = candidates[i];
+                            let sumCagr = 0;
+                            let count = 0;
+                            
+                            // 원 내부에 있는 점들의 평균 수익률 계산
+                            for (let j = 0; j < goodPoints.length; j++) {
+                                let g = goodPoints[j];
+                                let distSq = Math.pow(c.sell - g.sell, 2) + Math.pow(c.buy - g.buy, 2);
+                                if (distSq < maxMinDistSq - 1e-9) { // 원 내부에 들어오는 점
+                                    sumCagr += g.cagr;
+                                    count++;
+                                }
+                            }
+                            
+                            let avgCagr = count > 0 ? sumCagr / count : c.cagr;
+                            if (avgCagr > bestAvgCagr) {
+                                bestAvgCagr = avgCagr;
+                                bestStablePoint = c;
+                            }
+                        }
+                    }
+                }
+            } else {
+                bestStablePoint = results[0]; // 혹시 효용성>0 인게 아예 없다면 임시 할당
             }
 
             bestOptimizedBuy = bestBuy;
@@ -1577,6 +1653,36 @@
 
             const ctx = document.getElementById('tradeOptimizerChart').getContext('2d');
             if (tradeOptChartInstance) tradeOptChartInstance.destroy();
+
+            // 차트 텍스트 렌더링 함수
+            const updateResultText = (selectedItem = null) => {
+                let maxStrategyCagr = (Math.pow(maxFinalCapital / initCap, 1 / totalYears) - 1) * 100;
+                let maxUtility = (((1 + maxStrategyCagr / 100) / (1 + baseCagr / 100)) - 1) * 100;
+
+                let maxColor = getTradeColor(maxFinalCapital, maxFinalCapital, minFinalCapital, 1.0);
+                let baseColor = getTradeColor(baseFinalCapital, maxFinalCapital, minFinalCapital, 1.0);
+                let stableColor = bestStablePoint ? getTradeColor(bestStablePoint.v, maxFinalCapital, minFinalCapital, 1.0) : '#000';
+
+                let html = 
+                    `<strong style="color:#000000; font-size:16px;">단순 Buy&Hold</strong><br>` +
+                    `<span style="color:${baseColor}; font-weight:bold;">효용성: 0.00% / CAGR: ${baseCagr.toFixed(2)}%</span><br><br>` +
+                    `<strong style="color:#000000; font-size:16px;">최고 효율 지점</strong><br>` +
+                    `매수 <span style="color:#e74c3c; font-weight:bold;">${bestBuy.toFixed(2)}x</span> 이하 / 매도 <span style="color:#3498db; font-weight:bold;">${bestSell.toFixed(2)}x</span> 이상<br>` +
+                    `<span style="color:${maxColor}; font-weight:bold;">효용성: ${maxUtility.toFixed(2)}% / CAGR: ${maxStrategyCagr.toFixed(2)}%</span><br><br>` +
+                    `<strong style="color:#000000; font-size:16px;">최고 안정 지점</strong><br>` +
+                    `매수 <span style="color:#e74c3c; font-weight:bold;">${bestStablePoint.buy.toFixed(2)}x</span> 이하 / 매도 <span style="color:#3498db; font-weight:bold;">${bestStablePoint.sell.toFixed(2)}x</span> 이상<br>` +
+                    `<span style="color:${stableColor}; font-weight:bold;">효용성: ${bestStablePoint.utility.toFixed(2)}% / CAGR: ${bestStablePoint.cagr.toFixed(2)}%</span>`;
+
+                if (selectedItem) {
+                    let itemColor = getTradeColor(selectedItem.v, maxFinalCapital, minFinalCapital, 1.0);
+                    html += `<br><br>` +
+                            `<strong style="color:#000000; font-size:16px;">선택된 타점</strong><br>` +
+                            `매수 <span style="color:#e74c3c; font-weight:bold;">${selectedItem.buy.toFixed(2)}x</span> 이하 / 매도 <span style="color:#3498db; font-weight:bold;">${selectedItem.sell.toFixed(2)}x</span> 이상<br>` +
+                            `<span style="color:${itemColor}; font-weight:bold;">효용성: ${selectedItem.utility.toFixed(2)}% / CAGR: ${selectedItem.cagr.toFixed(2)}%</span>`;
+                }
+
+                document.getElementById('trade-opt-result-text').innerHTML = html;
+            };
             
             tradeOptChartInstance = new Chart(ctx, {
                 type: 'scatter',
@@ -1600,22 +1706,7 @@
                             window.selectedPointFromChart = { buy: item.buy, sell: item.sell };
                             document.getElementById('custom-apply-btn').disabled = false;
                             
-                            let maxStrategyCagr = (Math.pow(maxFinalCapital / initCap, 1 / totalYears) - 1) * 100;
-                            let maxUtility = (((1 + maxStrategyCagr / 100) / (1 + baseCagr / 100)) - 1) * 100;
-
-                            let maxColor = getTradeColor(maxFinalCapital, maxFinalCapital, minFinalCapital, 1.0);
-                            let baseColor = getTradeColor(baseFinalCapital, maxFinalCapital, minFinalCapital, 1.0);
-                            let itemColor = getTradeColor(item.v, maxFinalCapital, minFinalCapital, 1.0);
-
-                            document.getElementById('trade-opt-result-text').innerHTML = 
-                                `<strong style="color:#000000; font-size:16px;">단순 Buy&Hold</strong><br>` +
-                                `<span style="color:${baseColor}; font-weight:bold;">효용성: 0.00% / CAGR: ${baseCagr.toFixed(2)}%</span><br><br>` +
-                                `<strong style="color:#000000; font-size:16px;">최고 효율 지점</strong><br>` +
-                                `매수 <span style="color:#e74c3c; font-weight:bold;">${bestBuy.toFixed(2)}x</span> 이하 / 매도 <span style="color:#3498db; font-weight:bold;">${bestSell.toFixed(2)}x</span> 이상<br>` +
-                                `<span style="color:${maxColor}; font-weight:bold;">효용성: ${maxUtility.toFixed(2)}% / CAGR: ${maxStrategyCagr.toFixed(2)}%</span><br><br>` +
-                                `<strong style="color:#000000; font-size:16px;">선택된 타점</strong><br>` +
-                                `매수 <span style="color:#e74c3c; font-weight:bold;">${item.buy.toFixed(2)}x</span> 이하 / 매도 <span style="color:#3498db; font-weight:bold;">${item.sell.toFixed(2)}x</span> 이상<br>` +
-                                `<span style="color:${itemColor}; font-weight:bold;">효용성: ${item.utility.toFixed(2)}% / CAGR: ${item.cagr.toFixed(2)}%</span>`;
+                            updateResultText(item);
                         }
                     },
                     plugins: {
@@ -1638,19 +1729,8 @@
                 }
             });
 
-            let maxStrategyCagr = (Math.pow(maxFinalCapital / initCap, 1 / totalYears) - 1) * 100;
-            let maxUtility = (((1 + maxStrategyCagr / 100) / (1 + baseCagr / 100)) - 1) * 100;
-
-            let maxColor = getTradeColor(maxFinalCapital, maxFinalCapital, minFinalCapital, 1.0);
-            let baseColor = getTradeColor(baseFinalCapital, maxFinalCapital, minFinalCapital, 1.0);
-
-            document.getElementById('trade-opt-result-text').innerHTML = 
-                `<strong style="color:#000000; font-size:16px;">단순 Buy&Hold</strong><br>` +
-                `<span style="color:${baseColor}; font-weight:bold;">효용성: 0.00% / CAGR: ${baseCagr.toFixed(2)}%</span><br><br>` +
-                `<strong style="color:#000000; font-size:16px;">최고 효율 지점</strong><br>` +
-                `매수 <span style="color:#e74c3c; font-weight:bold;">${bestBuy.toFixed(2)}x</span> 이하 / 매도 <span style="color:#3498db; font-weight:bold;">${bestSell.toFixed(2)}x</span> 이상<br>` +
-                `<span style="color:${maxColor}; font-weight:bold;">효용성: ${maxUtility.toFixed(2)}% / CAGR: ${maxStrategyCagr.toFixed(2)}%</span>`;
-                
+            // 처음 팝업 열렸을 때 기본 렌더링
+            updateResultText();
             document.getElementById('trade-opt-apply-btn').style.display = 'inline-block';
         }
 
