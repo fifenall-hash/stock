@@ -10,7 +10,6 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Stock Analytics">
 
-    <!-- Chart.js 및 Zoom 플러그인 로드 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
@@ -30,7 +29,7 @@
         canvas {
             touch-action: pan-y !important; 
         }
-        #scatterChart, #tradeOptimizerChart, #splitCalcChart, #distChart {
+        #scatterChart, #tradeOptimizerChart, #splitCalcChart, #distChart, #quantileChart {
             touch-action: none !important; 
         }
 
@@ -252,7 +251,6 @@
 
     <div id="loading">데이터를 불러오는 중입니다...</div>
 
-    <!-- 1. 이격도 기준일수 최적화 모달창 -->
     <div id="optimizer-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 style="font-size: 18px; margin-top: 0;">📈 기준일수 최적화 분석기 (R² 기반)</h2>
@@ -268,7 +266,6 @@
         </div>
     </div>
 
-    <!-- 2. 매수/매도 최적화 모달창 -->
     <div id="trade-optimizer-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 style="font-size: 18px; margin-top: 0; color:#d35400;">📊 매수/매도 타점 최적화</h2>
@@ -286,7 +283,6 @@
         </div>
     </div>
 
-    <!-- 3. 시간흐름 비교 모달창 -->
     <div id="timeseries-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 style="font-size: 18px; margin-top: 0; color:#2c3e50;">📅 날짜별 이격도 & 물림일수 추이</h2>
@@ -300,7 +296,6 @@
         </div>
     </div>
 
-    <!-- 4. 산점도 모달창 -->
     <div id="scatter-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 style="font-size: 18px; margin-top: 0; color:#2c3e50;">📈 상관관계 산점도 및 추세선</h2>
@@ -314,7 +309,6 @@
         </div>
     </div>
 
-    <!-- 5. 분할매매 계산기 모달창 -->
     <div id="split-calc-modal" class="modal-overlay">
         <div class="modal-content" style="max-width: 1000px;">
             <h2 style="font-size: 18px; margin-top: 0; color:#8e44ad;">📉 커스텀 분할매매 계산기</h2>
@@ -325,8 +319,7 @@
                     ※ 해당하는 조건이 없을 경우 매매를 하지 않고 <strong>기존 보유량을 그대로 유지(관망)</strong>합니다.
                 </div>
                 <div id="conditions-container" style="display:flex; flex-direction:column; gap:10px;">
-                    <!-- JS를 통해 조건 입력창이 동적으로 추가됩니다 -->
-                </div>
+                    </div>
                 <div style="margin-top:15px; display:flex; justify-content:center; gap:10px;">
                     <button class="btn btn-info" style="margin:0; padding:8px 16px; font-weight:bold;" onclick="addConditionRow()">➕ 조건 추가</button>
                     <button class="btn btn-split" style="margin:0; padding:8px 16px; font-weight:bold;" onclick="runSplitCalculation()">🚀 계산하기</button>
@@ -354,7 +347,6 @@
         </div>
     </div>
 
-    <!-- 6. 이격도 분포도 및 누적확률 모달창 -->
     <div id="dist-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 style="font-size: 18px; margin-top: 0; color:#2c3e50;">📊 이격도 확률 분포도 (실제 vs 정규분포)</h2>
@@ -378,6 +370,21 @@
             <div class="modal-actions">
                 <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(distChartInstance)">🔍 줌 및 정보창 초기화</button>
                 <button class="btn" style="margin:0;" onclick="closeModal('dist-modal')">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="quantile-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 style="font-size: 18px; margin-top: 0; color:#8e44ad;">⚖️ 분위수 대칭 탐색 (1% ~ 50%)</h2>
+            <div class="opt-chart-container">
+                <canvas id="quantileChart"></canvas>
+            </div>
+            <p id="quantile-result-text" style="font-size:15px; margin:15px 0; line-height: 1.6;">모든 분위수 대칭 조합을 시뮬레이션 중입니다...</p>
+            <div class="modal-actions">
+                <button id="quantile-apply-btn" class="btn btn-apply-selected" style="display:none; margin:0;" onclick="applyQuantileOptimization()">적용하기</button>
+                <button class="btn btn-reset" style="margin:0;" onclick="resetChartZoom(window.quantileChartInstance)">🔍 줌/초기화</button>
+                <button class="btn" style="margin:0;" onclick="closeModal('quantile-modal')">닫기</button>
             </div>
         </div>
     </div>
@@ -409,7 +416,8 @@
             </div>
             <div class="btn-group" style="margin-top: 5px;">
                 <button class="btn btn-trade-opt" onclick="openTradeOptimizer()">📊 매수/매도 최적화</button>
-                <button class="btn btn-optimize" onclick="openOptimizer()">💡 기준일수 최적화 (R²)</button>
+                <button class="btn btn-optimize" onclick="openQuantileModal()">⚖️ 분위수 대칭 탐색</button>
+                <button class="btn btn-optimize" style="background-color:#c0392b;" onclick="openOptimizer()">💡 기준일수 최적화 (R²)</button>
                 <button class="btn btn-split" onclick="openSplitCalculator()">📉 분할매매 계산기</button>
             </div>
             <div class="btn-group" style="margin-top: 5px;">
@@ -420,7 +428,6 @@
             </div>
         </div>
 
-        <!-- 분리된 패널 -->
         <div id="simulation-panel" class="simulation-panel"></div>
         <div id="evaluation-panel" class="evaluation-panel"></div>
         
@@ -444,7 +451,6 @@
             <button class="btn btn-download" style="margin-top:0;" onclick="downloadCSV()">⬇️ 데이터 표 다운로드 (.csv)</button>
         </div>
 
-        <!-- 표 영역 -->
         <div id="table-container" style="display:block; width:100%; overflow-x:auto; margin-top:15px;">
             <table id="data-table">
                 <thead>
@@ -497,6 +503,10 @@
         
         window.fullCsvData = null;
         
+        window.quantileChartInstance = null;
+        window.quantileResults = [];
+        window.selectedQuantilePoint = null;
+
         // 자산 켜기/끄기 토글 상태 변수
         let showSimAsset = false;
 
@@ -505,12 +515,12 @@
             const btn = document.getElementById('toggle-sim-asset-btn');
             if (showSimAsset) {
                 btn.innerHTML = "📉 시뮬레이션 자산 끄기";
-                btn.style.backgroundColor = "#7f8c8d"; // 회색 버튼
+                btn.style.backgroundColor = "#7f8c8d"; 
             } else {
                 btn.innerHTML = "📈 시뮬레이션 자산 켜기";
-                btn.style.backgroundColor = "#2980b9"; // 기존 파란색
+                btn.style.backgroundColor = "#2980b9"; 
             }
-            if (cachedData) calculateAndRender(); // 재계산 및 렌더링 호출
+            if (cachedData) calculateAndRender(); 
         }
 
         function getTradeColor(cap, maxCap, minCap, alpha = 1.0) {
@@ -1072,15 +1082,14 @@
                 } 
             };
 
-            // 시뮬레이션 자산이 켜져있다면 우측 보조 축과 라인 2개(전략 자산, B&H 자산) 추가
             if (showSimAsset && simAssetData && baseAssetData) {
                 chartDatasets.push({
                     label: `단순 Buy&Hold 자산 (우측 축)`,
                     data: baseAssetData,
-                    borderColor: '#7f8c8d', // 회색
+                    borderColor: '#7f8c8d', 
                     backgroundColor: 'rgba(127, 140, 141, 0.1)',
                     borderWidth: 2,
-                    borderDash: [5, 5], // 점선으로 표현
+                    borderDash: [5, 5], 
                     pointRadius: 0,
                     tension: 0.1,
                     yAxisID: 'y1',
@@ -1090,13 +1099,13 @@
                 chartDatasets.push({
                     label: `시뮬레이션 전략 자산 (우측 축)`,
                     data: simAssetData,
-                    borderColor: '#27ae60', // 녹색
+                    borderColor: '#27ae60', 
                     backgroundColor: 'rgba(39, 174, 96, 0.1)',
                     borderWidth: 2.5,
                     pointRadius: 0,
                     tension: 0.1,
                     yAxisID: 'y1',
-                    order: 1 // 가장 위에 그려지도록 설정
+                    order: 1 
                 });
 
                 chartScales.y1 = {
@@ -1643,6 +1652,7 @@
                 for (let j = 0; j < xLabels.length; j++) {
                     let buyPt = xLabels[j];
                     
+                    // 논리적 오류 지점 (매수 >= 매도)은 다시 투명한 벽(장애물)으로 설정
                     if (buyPt >= sellPt) {
                         badPoints.push({ buy: buyPt, sell: sellPt, v: 0, utility: 0, cagr: 0 });
                         continue; 
@@ -1843,7 +1853,7 @@
                             type: 'line',
                             label: '최고 안정 지점 ⚫',
                             data: stableCircleData,
-                            borderColor: 'rgba(0, 0, 0, 0.9)', 
+                            borderColor: 'rgba(0, 0, 0, 0.9)', // 검정색
                             backgroundColor: 'rgba(0, 0, 0, 0.1)',
                             borderWidth: 2,
                             borderDash: [5, 5],
@@ -1858,7 +1868,7 @@
                             type: 'line',
                             label: '선택 타점 ⚪',
                             data: [], 
-                            borderColor: 'rgba(128, 128, 128, 0.9)', 
+                            borderColor: 'rgba(128, 128, 128, 0.9)', // 회색
                             backgroundColor: 'rgba(128, 128, 128, 0.15)',
                             borderWidth: 2,
                             borderDash: [5, 5],
@@ -1944,6 +1954,240 @@
             updateResultText();
             document.getElementById('trade-opt-apply-btn').style.display = 'inline-block';
             document.getElementById('stable-opt-apply-btn').style.display = 'inline-block';
+        }
+
+        // --- 분위수 대칭 탐색 (Quantile Search) 모달 기능 추가 ---
+        function openQuantileModal() {
+            if (!cachedData) return alert('먼저 데이터를 불러와주세요.');
+            openModal('quantile-modal');
+            document.getElementById('quantile-apply-btn').style.display = 'none';
+            document.getElementById('quantile-result-text').innerText = '1%~50% 분위수 대칭 분석을 수행 중입니다... (약간의 시간이 소요될 수 있습니다)';
+            if (window.quantileChartInstance) window.quantileChartInstance.destroy();
+            setTimeout(() => { runQuantileSearch(); }, 100);
+        }
+
+        function runQuantileSearch() {
+            const period = parseInt(document.getElementById('ma-period').value) || 1500;
+            const initCap = 10000;
+            const N = cachedData.prices.length;
+            let disparities = new Array(N).fill(null);
+            let sum = 0, validCount = 0;
+            let minD = 9999, maxD = -9999;
+            let validDisparities = [];
+
+            for (let i = 0; i < N; i++) {
+                let p = cachedData.prices[i];
+                sum += p;
+                if (i >= period) sum -= cachedData.prices[i - period];
+                if (i >= period - 1) {
+                    let avg = sum / period;
+                    if (avg > 0) {
+                        let d = p / avg;
+                        disparities[i] = d;
+                        if (Number.isFinite(d)) {
+                            validCount++;
+                            validDisparities.push(d);
+                            if (d < minD) minD = d;
+                            if (d > maxD) maxD = d;
+                        }
+                    }
+                }
+            }
+
+            if (validCount < 10) {
+                closeModal('quantile-modal');
+                return alert("데이터가 너무 적어 최적화할 수 없습니다.");
+            }
+
+            let firstValidIdx = disparities.findIndex(d => d !== null);
+            if (firstValidIdx === -1) firstValidIdx = 0;
+
+            const startDt = new Date(cachedData.dates[firstValidIdx]);
+            const endDt = new Date(cachedData.dates[N - 1]);
+            const totalDays = Math.ceil(Math.abs(endDt - startDt) / (1000 * 60 * 60 * 24));
+            let totalYears = totalDays / 365.2425;
+            if (totalYears <= 0) totalYears = 0.001;
+
+            const baseInitialPrice = cachedData.prices[firstValidIdx];
+            const baseLatestPrice = cachedData.prices[N - 1];
+            const baseCagr = (Math.pow(baseLatestPrice / baseInitialPrice, 1 / totalYears) - 1) * 100;
+
+            // 반경 계산을 위해 badPoints 생성 (안전 반경용)
+            let step = 0.05; 
+            let startD = Math.floor(minD / step) * step - step;
+            let endD = Math.ceil(maxD / step) * step + step;
+            let xLabels = [], yLabels = []; 
+            for (let b = startD; b <= endD + 0.001; b += step) xLabels.push(parseFloat(b.toFixed(2)));
+            for (let s = startD; s <= endD + 0.001; s += step) yLabels.push(parseFloat(s.toFixed(2)));
+
+            let badPoints = []; 
+            for (let i = 0; i < yLabels.length; i++) {
+                let sellPt = yLabels[i];
+                for (let j = 0; j < xLabels.length; j++) {
+                    let buyPt = xLabels[j];
+                    if (buyPt >= sellPt) {
+                        badPoints.push({ buy: buyPt, sell: sellPt });
+                        continue; 
+                    }
+                    let cash = 0, shares = initCap / baseInitialPrice, isHolding = true;
+                    for (let k = firstValidIdx; k < N; k++) {
+                        let d = disparities[k];
+                        if (d === null) continue;
+                        let p = cachedData.prices[k];
+                        if (isHolding && d > sellPt && shares > 0) { cash = shares * p; shares = 0; isHolding = false; } 
+                        else if (!isHolding && d < buyPt && cash > 0) { shares = cash / p; cash = 0; isHolding = true; }
+                    }
+                    let finalCap = cash + (shares * baseLatestPrice);
+                    let strategyCagr = (Math.pow(finalCap / initCap, 1 / totalYears) - 1) * 100;
+                    let utility = (((1 + strategyCagr / 100) / (1 + baseCagr / 100)) - 1) * 100;
+                    if (utility <= 0) badPoints.push({ buy: buyPt, sell: sellPt });
+                }
+            }
+
+            // 정규분포 가정을 위한 평균 및 표준편차 계산
+            let dispSum = 0;
+            for(let d of validDisparities) dispSum += d;
+            let mean = dispSum / validDisparities.length;
+            let sqSum = 0;
+            for(let d of validDisparities) sqSum += Math.pow(d - mean, 2);
+            let stdDev = Math.sqrt(sqSum / validDisparities.length);
+
+            let chartLabels = [];
+            let utilityData = [];
+            let safeRadiusData = [];
+            window.quantileResults = [];
+            let bestUtility = -Infinity;
+            let bestItem = null;
+
+            // 1% 부터 50% 까지 0.01% 스텝으로 반복 (4901번 반복)
+            for (let p_int = 100; p_int <= 5000; p_int += 1) {
+                let p_percent = p_int / 100; 
+                chartLabels.push(p_percent.toFixed(2));
+
+                let p_buy = p_percent / 100;
+                let p_sell = (100 - p_percent) / 100;
+
+                let z_buy = inverseNormalCDF(p_buy);
+                let z_sell = inverseNormalCDF(p_sell);
+
+                let buyPt = mean + z_buy * stdDev;
+                let sellPt = mean + z_sell * stdDev;
+
+                let cash = 0, shares = initCap / baseInitialPrice, isHolding = true;
+                for (let k = firstValidIdx; k < N; k++) {
+                    let d = disparities[k];
+                    if (d === null) continue;
+                    let p = cachedData.prices[k];
+                    if (isHolding && d > sellPt && shares > 0) { cash = shares * p; shares = 0; isHolding = false; } 
+                    else if (!isHolding && d < buyPt && cash > 0) { shares = cash / p; cash = 0; isHolding = true; }
+                }
+
+                let finalCap = cash + (shares * baseLatestPrice);
+                let strategyCagr = (Math.pow(finalCap / initCap, 1 / totalYears) - 1) * 100;
+                let utility = (((1 + strategyCagr / 100) / (1 + baseCagr / 100)) - 1) * 100;
+
+                let safeR = getTradeRadius(sellPt, buyPt, badPoints);
+
+                utilityData.push(utility);
+                safeRadiusData.push(safeR);
+
+                let item = { p: p_percent, buy: buyPt, sell: sellPt, utility: utility, cagr: strategyCagr, r: safeR };
+                window.quantileResults.push(item);
+
+                if (utility > bestUtility) {
+                    bestUtility = utility;
+                    bestItem = item;
+                }
+            }
+
+            window.selectedQuantilePoint = bestItem;
+
+            const ctx = document.getElementById('quantileChart').getContext('2d');
+            window.quantileChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: chartLabels,
+                    datasets: [
+                        {
+                            label: '효용성 (%)',
+                            data: utilityData,
+                            borderColor: '#e74c3c',
+                            backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                            borderWidth: 2,
+                            yAxisID: 'y',
+                            pointRadius: 0,
+                            pointHoverRadius: 4,
+                            fill: true,
+                            order: 2
+                        },
+                        {
+                            label: '안전 반경',
+                            data: safeRadiusData,
+                            borderColor: '#3498db',
+                            borderDash: [5, 5],
+                            borderWidth: 2,
+                            yAxisID: 'y1',
+                            pointRadius: 0,
+                            pointHoverRadius: 4,
+                            fill: false,
+                            order: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    onClick: function(e, elements) {
+                        if (elements.length > 0) {
+                            const idx = elements[0].index;
+                            const item = window.quantileResults[idx];
+                            window.selectedQuantilePoint = item;
+                            updateQuantileResultText(item);
+                        }
+                    },
+                    plugins: {
+                        zoom: zoomPluginX,
+                        tooltip: {
+                            callbacks: {
+                                title: function(ctx) { return `분위수 대칭: ${ctx[0].label}% 기준`; },
+                                label: function(ctx) { return `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}`; }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { 
+                            title: { display: true, text: '하위/상위 분위수 (%)' },
+                            ticks: { maxTicksLimit: 10 } 
+                        },
+                        y: { type: 'linear', position: 'left', title: { display: true, text: '효용성 (%)', color: '#e74c3c' } },
+                        y1: { type: 'linear', position: 'right', title: { display: true, text: '안전 반경', color: '#3498db' }, grid: { drawOnChartArea: false } }
+                    }
+                }
+            });
+
+            updateQuantileResultText(bestItem, true);
+            document.getElementById('quantile-apply-btn').style.display = 'inline-block';
+        }
+
+        function updateQuantileResultText(item, isBest = false) {
+            let prefix = isBest ? "🏆 최고 효율 대칭 지점" : "🎯 선택된 대칭 지점";
+            let html = `
+                <strong style="color:#2c3e50; font-size:16px;">${prefix} (분위수 ${item.p.toFixed(2)}%)</strong><br>
+                매수(하위 ${item.p.toFixed(2)}%): <span style="color:#e74c3c; font-weight:bold;">${item.buy.toFixed(4)}x</span> 이하 / 
+                매도(상위 ${item.p.toFixed(2)}%): <span style="color:#3498db; font-weight:bold;">${item.sell.toFixed(4)}x</span> 이상<br>
+                <span style="font-size:13px; color:#7f8c8d;">(안전 반경: ${item.r.toFixed(2)})</span><br>
+                <span style="color:#8e44ad; font-weight:bold;">효용성: ${item.utility.toFixed(2)}% / CAGR: ${item.cagr.toFixed(2)}%</span>
+            `;
+            document.getElementById('quantile-result-text').innerHTML = html;
+        }
+
+        function applyQuantileOptimization() {
+            if (window.selectedQuantilePoint) {
+                document.getElementById('buy-point').value = parseFloat(window.selectedQuantilePoint.buy.toFixed(2));
+                document.getElementById('sell-point').value = parseFloat(window.selectedQuantilePoint.sell.toFixed(2));
+                closeModal('quantile-modal');
+                calculateAndRender();
+            }
         }
 
         function applyTradeOptimization() {
