@@ -4,7 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>금융 분석 차트 (PWA)</title>
+    
+    <!-- 아이콘 적용 -->
+    <link rel="icon" href="icon.ico" type="image/x-icon">
+    <link rel="icon" href="icon.png" type="image/png">
+    <link rel="apple-touch-icon" href="icon.png">
     <link rel="manifest" href="manifest.json">
+    
     <meta name="theme-color" content="#121212">
     <!-- Chart.js 및 Date 어댑터 -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -36,8 +42,7 @@
         }
         input {
             padding: 10px 15px; font-size: 16px; border: 1px solid #333;
-            border-radius: 4px; background-color: #2a2a2a; color: white;
-            outline: none;
+            border-radius: 4px; background-color: #2a2a2a; color: white; outline: none;
         }
         input:focus { border-color: var(--accent); }
         button {
@@ -48,6 +53,12 @@
         #search-btn:hover { background-color: var(--accent-hover); }
         #toggle-btn { background-color: #4CAF50; color: white; }
         #toggle-btn.off { background-color: #555; color: #ccc; }
+        
+        .r2-display {
+            font-size: 16px; font-weight: bold; color: #ffeb3b;
+            padding: 10px 15px; background-color: #333; border-radius: 4px;
+        }
+        .loading { font-size: 14px; color: #ffeb3b; display: none; margin-left: 10px; }
 
         .main-content {
             display: flex; gap: 20px; flex: 1; min-height: 0;
@@ -63,10 +74,10 @@
         .indicator-group { margin-bottom: 20px; }
         .indicator-group h3 { margin-top: 0; font-size: 16px; color: var(--accent); border-bottom: 1px solid #333; padding-bottom: 5px; }
         .checkbox-label {
-            display: block; margin-bottom: 10px; cursor: pointer; color: #ddd; font-size: 14px;
+            display: flex; align-items: center; margin-bottom: 10px; cursor: pointer; color: #ddd; font-size: 14px;
         }
         .checkbox-label input { margin-right: 8px; cursor: pointer; }
-        .loading { font-size: 14px; color: #ffeb3b; display: none; margin-left: 10px; }
+        .ind-text { display: inline-block; }
     </style>
 </head>
 <body>
@@ -85,6 +96,7 @@
         <input type="text" id="ticker-input" placeholder="티커 입력 (예: TQQQ)" value="TQQQ">
         <button id="search-btn">차트 검색</button>
         <button id="toggle-btn">추세선 기반 선형화: ON</button>
+        <div id="r2-main-display" class="r2-display" style="display:none;"></div>
         <span id="status-msg" class="loading">데이터 불러오는 중...</span>
     </div>
 
@@ -93,17 +105,15 @@
             <canvas id="mainChart"></canvas>
         </div>
         <div class="indicator-container" id="indicator-panel">
-            <!-- 자바스크립트로 체크박스 목록 자동 생성 -->
+            <!-- 체크박스 목록 자동 생성 -->
         </div>
     </div>
 
     <script>
-        // PWA 서비스 워커 등록 (캐시 무시용)
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js').catch(err => console.log('SW 등록 실패:', err));
         }
 
-        // 지표 메타 데이터
         const INDICATORS = {
             'yahoo': [
                 { id: 'DX-Y.NYB', name: '달러 인덱스' },
@@ -124,20 +134,31 @@
                 { id: 'STLFSI4', name: '금융스트레스 지수' }
             ]
         };
-
         const IND_COLORS = ['#00e676', '#29b6f6', '#ffea00', '#ff9100', '#f50057', '#d500f9', '#651fff', '#00b0ff', '#1de9b6'];
 
         let chartInstance = null;
-        let mainData = [];       // 원본 종가
-        let trendData = [];      // 지수 추세선
-        let detrendedData = [];  // 선형화 데이터 (종가/추세선)
-        let isDetrendedMode = true; // 버튼 기본값 ON
-        let cachedIndicators = {}; // 불러온 보조지표 캐싱
+        let mainData = [];       
+        let trendData = [];      
+        let detrendedData = [];  
+        
+        // 물림일수(Trapped Days) 및 R^2 관련 전역 변수
+        let trappedDaysArray = [];
+        let validDataLength = 0; 
+        
+        let isDetrendedMode = true; 
+        let cachedIndicators = {}; // 원본 보조지표 데이터
+        let alignedIndicators = {}; // 메인 차트 날짜에 맞춰진 보조지표 데이터
         let activeTicker = "";
 
-        // UI 초기화 - 보조지표 체크박스 생성
+        // 날짜 변환 헬퍼 (YYYY-MM-DD 포맷 통일용)
+        function toYYYYMMDD(ms) {
+            const d = new Date(ms);
+            return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        }
+
         function initIndicatorsUI() {
             const panel = document.getElementById('indicator-panel');
+            panel.innerHTML = '';
             
             ['yahoo', 'fred'].forEach(source => {
                 const group = document.createElement('div');
@@ -148,8 +169,8 @@
                     const label = document.createElement('label');
                     label.className = 'checkbox-label';
                     label.innerHTML = `
-                        <input type="checkbox" class="indicator-cb" value="${ind.id}" data-source="${source}"> 
-                        ${ind.name}
+                        <input type="checkbox" class="indicator-cb" value="${ind.id}" data-source="${source}" data-name="${ind.name}"> 
+                        <span class="ind-text" id="label-${ind.id.replace(/\W/g, '')}">${ind.name}</span>
                     `;
                     label.querySelector('input').addEventListener('change', handleIndicatorToggle);
                     group.appendChild(label);
@@ -158,9 +179,9 @@
             });
         }
 
-        // 야후 파이낸스 데이터 패치 (10년치)
+        // 전체 기간(max) 데이터 패치
         async function fetchYahoo(ticker) {
-            const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=10y&interval=1d`;
+            const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=max&interval=1d`;
             const res = await fetch(url);
             if (!res.ok) throw new Error('Network response was not ok');
             const data = await res.json();
@@ -176,7 +197,6 @@
             return result;
         }
 
-        // FRED CSV 데이터 패치
         async function fetchFred(ticker) {
             const url = `https://fred.stlouisfed.org/graph/fredgraph.csv?id=${ticker}`;
             const res = await fetch(url);
@@ -195,28 +215,24 @@
             return result;
         }
 
-        // 지수 기반 선형회귀 추세선 계산 (Log-Linear)
+        // 지수 기반 선형회귀 추세선 계산
         function calculateTrend(data) {
             let n = data.length;
-            if (n === 0) return [];
+            if (n === 0) return { tData: [], dData: [] };
             
             let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
             let x0 = data[0].x; 
             
             for (let i = 0; i < n; i++) {
-                let x = (data[i].x - x0) / 86400000; // 첫날 기준 경과일수로 변환
+                let x = (data[i].x - x0) / 86400000;
                 let y = Math.log(data[i].y);
-                sumX += x;
-                sumY += y;
-                sumXY += x * y;
-                sumX2 += x * x;
+                sumX += x; sumY += y; sumXY += x * y; sumX2 += x * x;
             }
             
             let m = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
             let c = (sumY - m * sumX) / n;
             
-            let tData = [];
-            let dData = [];
+            let tData = []; let dData = [];
             
             for (let i = 0; i < n; i++) {
                 let x = (data[i].x - x0) / 86400000;
@@ -227,7 +243,97 @@
             return { tData, dData };
         }
 
-        // 메인 티커 검색 로직
+        // 물림일수(Trapped Days) 계산 (O(N^2) 완전탐색)
+        function calculateTrappedDays(data) {
+            let n = data.length;
+            let trapped = new Array(n).fill(0);
+            
+            for (let i = 0; i < n; i++) {
+                let count = 0;
+                let currentClose = data[i].y;
+                for (let j = i + 1; j < n; j++) {
+                    if (data[j].y < currentClose) count++;
+                }
+                trapped[i] = count;
+            }
+            
+            let maxTrappedDays = Math.max(...trapped);
+            // 최신날짜로부터 최대물림일수를 뺀 기간 계산
+            let validLen = Math.max(0, n - maxTrappedDays);
+            
+            return { trapped, maxTrappedDays, validLen };
+        }
+
+        // 결정계수(r^2) 계산기
+        function calculateR2(arrX, arrY, validLen) {
+            if(validLen < 2) return 0;
+            let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
+            let count = 0;
+
+            for(let i = 0; i < validLen; i++) {
+                if(arrX[i] === null || arrY[i] === null || isNaN(arrX[i]) || isNaN(arrY[i])) continue;
+                let x = arrX[i];
+                let y = arrY[i];
+                sumX += x; sumY += y; sumXY += x * y;
+                sumX2 += x * x; sumY2 += y * y;
+                count++;
+            }
+            
+            if(count < 2) return 0;
+            let num = (count * sumXY) - (sumX * sumY);
+            let den = Math.sqrt((count * sumX2 - sumX*sumX) * (count * sumY2 - sumY*sumY));
+            if(den === 0) return 0;
+            let r = num / den;
+            return r * r;
+        }
+
+        // 주가 차트 기간에 맞춰 보조지표 데이터를 1:1 동기화 (전일 값 유지)
+        function alignIndicatorData(indData) {
+            let map = new Map();
+            for (let d of indData) {
+                map.set(toYYYYMMDD(d.x), d.y);
+            }
+
+            let aligned = [];
+            let lastVal = null;
+            for (let d of mainData) {
+                let dateStr = toYYYYMMDD(d.x);
+                if (map.has(dateStr)) {
+                    lastVal = map.get(dateStr);
+                }
+                aligned.push({ x: d.x, y: lastVal }); // 이전 값 포워드 필링
+            }
+            return aligned;
+        }
+
+        // 체크리스트 r^2 레이블 전체 업데이트
+        function updateAllR2Labels() {
+            // 종가/추세선 vs 물림일수 R^2
+            const detrendY = detrendedData.map(d => d.y);
+            const mainR2 = calculateR2(detrendY, trappedDaysArray, validDataLength);
+            
+            const mainR2Elem = document.getElementById('r2-main-display');
+            mainR2Elem.style.display = 'block';
+            mainR2Elem.innerHTML = `종가/추세선 ↔ 물림일수 (r²: ${mainR2.toFixed(4)})`;
+
+            // 각 보조지표 vs 물림일수 R^2
+            document.querySelectorAll('.indicator-cb').forEach(cb => {
+                const id = cb.value;
+                const baseName = cb.dataset.name;
+                const labelSpan = document.getElementById(`label-${id.replace(/\W/g, '')}`);
+                
+                if (alignedIndicators[id]) {
+                    const indY = alignedIndicators[id].map(d => d.y);
+                    const indR2 = calculateR2(indY, trappedDaysArray, validDataLength);
+                    labelSpan.innerHTML = `${baseName} (r²: ${indR2.toFixed(4)})`;
+                    labelSpan.style.color = '#ffeb3b';
+                } else {
+                    labelSpan.innerHTML = baseName; // 데이터 없으면 원래 이름으로
+                    labelSpan.style.color = '#ddd';
+                }
+            });
+        }
+
         document.getElementById('search-btn').addEventListener('click', async () => {
             const ticker = document.getElementById('ticker-input').value.trim();
             if (!ticker) return;
@@ -237,22 +343,33 @@
             status.style.display = 'inline';
             
             try {
+                // 1. 메인 데이터 및 추세 계산
                 mainData = await fetchYahoo(activeTicker);
                 const calc = calculateTrend(mainData);
                 trendData = calc.tData;
                 detrendedData = calc.dData;
                 
-                document.getElementById('cors-guide').style.display = 'none'; // 성공시 안내문 숨김
+                // 2. 물림일수 계산
+                const trapCalc = calculateTrappedDays(mainData);
+                trappedDaysArray = trapCalc.trapped;
+                validDataLength = trapCalc.validLen;
+                
+                // 3. 기존에 캐싱된 보조지표가 있다면, 바뀐 메인 데이터 날짜에 맞춰 재정렬
+                for (let id in cachedIndicators) {
+                    alignedIndicators[id] = alignIndicatorData(cachedIndicators[id]);
+                }
+
+                document.getElementById('cors-guide').style.display = 'none'; 
+                updateAllR2Labels();
                 updateChart();
             } catch (err) {
-                alert('데이터를 가져오지 못했습니다. 확장프로그램(Allow CORS)이 켜져 있는지 확인해 주세요.\n티커를 정확히 입력했는지도 확인바랍니다.');
+                alert('데이터를 가져오지 못했습니다. 확장프로그램(Allow CORS)이 켜져 있는지 확인해 주세요.');
                 console.error(err);
             } finally {
                 status.style.display = 'none';
             }
         });
 
-        // 토글 버튼 이벤트
         const toggleBtn = document.getElementById('toggle-btn');
         toggleBtn.addEventListener('click', () => {
             isDetrendedMode = !isDetrendedMode;
@@ -266,7 +383,6 @@
             if (mainData.length > 0) updateChart();
         });
 
-        // 보조지표 체크박스 이벤트
         async function handleIndicatorToggle(e) {
             const cb = e.target;
             const id = cb.value;
@@ -278,7 +394,14 @@
                     cb.disabled = true;
                     status.style.display = 'inline';
                     try {
-                        cachedIndicators[id] = source === 'yahoo' ? await fetchYahoo(id) : await fetchFred(id);
+                        const rawData = source === 'yahoo' ? await fetchYahoo(id) : await fetchFred(id);
+                        cachedIndicators[id] = rawData;
+                        
+                        // 메인 데이터가 이미 존재하면 바로 동기화 수행
+                        if(mainData.length > 0) {
+                            alignedIndicators[id] = alignIndicatorData(rawData);
+                            updateAllR2Labels();
+                        }
                     } catch (err) {
                         alert(`[${id}] 데이터를 가져오는 중 오류가 발생했습니다.`);
                         cb.checked = false;
@@ -291,7 +414,38 @@
             if (mainData.length > 0) updateChart();
         }
 
-        // 차트 렌더링 함수
+        // 연도 변경 커스텀 점선 플러그인
+        const yearLinesPlugin = {
+            id: 'yearLines',
+            beforeDraw: (chart) => {
+                const ctx = chart.ctx;
+                const xAxis = chart.scales.x;
+                const yAxis = chart.scales.y;
+                const data = chart.data.datasets[0].data;
+                if (!data || data.length === 0) return;
+
+                ctx.save();
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([5, 5]);
+                ctx.beginPath();
+
+                for (let i = 1; i < data.length; i++) {
+                    const prevYear = new Date(data[i-1].x).getFullYear();
+                    const currYear = new Date(data[i].x).getFullYear();
+                    
+                    if (currYear > prevYear) {
+                        // 두 거래일 사이 중간 지점에 선 그리기
+                        const xPos = (xAxis.getPixelForValue(data[i-1].x) + xAxis.getPixelForValue(data[i].x)) / 2;
+                        ctx.moveTo(xPos, yAxis.top);
+                        ctx.lineTo(xPos, yAxis.bottom);
+                    }
+                }
+                ctx.stroke();
+                ctx.restore();
+            }
+        };
+
         function updateChart() {
             if (chartInstance) {
                 chartInstance.destroy();
@@ -302,114 +456,82 @@
                 x: {
                     type: 'time',
                     time: { tooltipFormat: 'yyyy-MM-dd' },
-                    grid: { color: 'rgba(255,255,255,0.1)' },
+                    grid: { color: 'rgba(255,255,255,0.1)', drawOnChartArea: false }, // 기본 세로 그리드 제거 (커스텀 점선만 표시)
                     ticks: { color: '#aaa' }
                 }
             };
 
-            // 메인 차트 및 Y축 설정
             if (isDetrendedMode) {
                 datasets.push({
                     label: `${activeTicker} 종가/추세선 비율`,
                     data: detrendedData,
-                    borderColor: '#ffffff',
-                    borderWidth: 1.5,
-                    pointRadius: 0,
-                    yAxisID: 'y'
+                    borderColor: '#ffffff', borderWidth: 1.5, pointRadius: 0, yAxisID: 'y'
                 });
-                // 가로 기준선 (값이 1인 지점)
                 datasets.push({
                     label: '기준선 (1.0)',
                     data: [{ x: mainData[0].x, y: 1 }, { x: mainData[mainData.length - 1].x, y: 1 }],
-                    borderColor: 'rgba(255, 255, 255, 0.4)',
-                    borderWidth: 1,
-                    borderDash: [5, 5],
-                    pointRadius: 0,
-                    yAxisID: 'y'
+                    borderColor: 'rgba(255, 255, 255, 0.4)', borderWidth: 1, borderDash: [2, 2], pointRadius: 0, yAxisID: 'y'
                 });
                 
                 scales.y = {
-                    type: 'linear',
-                    position: 'left',
-                    grid: { color: 'rgba(255,255,255,0.1)' },
-                    ticks: { color: '#aaa' }
+                    type: 'linear', position: 'left',
+                    grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: '#aaa' }
                 };
             } else {
                 datasets.push({
                     label: `${activeTicker} 종가 (로그)`,
                     data: mainData,
-                    borderColor: '#ffffff',
-                    borderWidth: 1.5,
-                    pointRadius: 0,
-                    yAxisID: 'y'
+                    borderColor: '#ffffff', borderWidth: 1.5, pointRadius: 0, yAxisID: 'y'
                 });
                 datasets.push({
                     label: '지수 추세선',
                     data: trendData,
-                    borderColor: '#ff5252',
-                    borderWidth: 1.5,
-                    borderDash: [4, 4],
-                    pointRadius: 0,
-                    yAxisID: 'y'
+                    borderColor: '#ff5252', borderWidth: 1.5, borderDash: [4, 4], pointRadius: 0, yAxisID: 'y'
                 });
                 
                 scales.y = {
-                    type: 'logarithmic',
-                    position: 'left',
-                    grid: { color: 'rgba(255,255,255,0.1)' },
-                    ticks: { color: '#aaa' }
+                    type: 'logarithmic', position: 'left',
+                    grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: '#aaa' }
                 };
             }
 
-            // 활성화된 보조지표 추가
             let colorIndex = 0;
             document.querySelectorAll('.indicator-cb:checked').forEach(cb => {
                 const id = cb.value;
-                const name = cb.parentNode.textContent.trim();
-                if (cachedIndicators[id]) {
+                const baseName = cb.dataset.name;
+                if (alignedIndicators[id]) {
                     const yAxisID = 'y_' + id;
                     datasets.push({
-                        label: name,
-                        data: cachedIndicators[id],
+                        label: baseName,
+                        data: alignedIndicators[id], // 메인 차트와 날짜가 완벽히 동기화된 배열 
                         borderColor: IND_COLORS[colorIndex % IND_COLORS.length],
-                        borderWidth: 1.5,
-                        pointRadius: 0,
-                        yAxisID: yAxisID
+                        borderWidth: 1.5, pointRadius: 0, yAxisID: yAxisID
                     });
                     
-                    // 우측 보조 축 생성 (display: false 처리로 시각적 생략)
                     scales[yAxisID] = {
-                        type: 'linear',
-                        position: 'right',
-                        display: false 
+                        type: 'linear', position: 'right', display: false 
                     };
                     colorIndex++;
                 }
             });
 
-            // 차트 인스턴스 생성
             const ctx = document.getElementById('mainChart').getContext('2d');
             chartInstance = new Chart(ctx, {
                 type: 'line',
                 data: { datasets },
                 options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
+                    responsive: true, maintainAspectRatio: false,
                     interaction: { mode: 'index', intersect: false },
                     scales: scales,
                     plugins: {
                         legend: { labels: { color: '#fff' } },
-                        tooltip: {
-                            backgroundColor: 'rgba(0,0,0,0.8)',
-                            titleColor: '#fff',
-                            bodyColor: '#fff'
-                        }
+                        tooltip: { backgroundColor: 'rgba(0,0,0,0.8)', titleColor: '#fff', bodyColor: '#fff' }
                     }
-                }
+                },
+                plugins: [yearLinesPlugin] // 연도 변경 점선 플러그인 등록
             });
         }
 
-        // 초기화 실행
         initIndicatorsUI();
     </script>
 </body>
