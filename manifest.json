@@ -7,14 +7,9 @@
   "theme_color": "#121212",
   "icons": [
     {
-      "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iIzI5YjZmNiI+PHBhdGggZD0iTTMgM3YxOGgxOFYzaC0xOHptMTYgMTZINVY1aDE0djE0eiIgLz48cGF0aCBkPSJNMTEgMTNsMy0zIDMgMy0zIDMtMy0zeiIgLz48L3N2Zz4=",
-      "sizes": "192x192",
-      "type": "image/svg+xml"
-    },
-    {
-      "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iIzI5YjZmNiI+PHBhdGggZD0iTTMgM3YxOGgxOFYzaC0xOHptMTYgMTZINVY1aDE0djE0eiIgLz48cGF0aCBkPSJNMTEgMTNsMy0zIDMgMy0zIDMtMy0zeiIgLz48L3N2Zz4=",
-      "sizes": "512x512",
-      "type": "image/svg+xml"
+      "src": "icon.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png"
     }
   ]
 }
