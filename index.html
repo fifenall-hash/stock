@@ -78,6 +78,7 @@
         }
         .checkbox-label input { margin-right: 8px; cursor: pointer; }
         .ind-text { display: inline-block; }
+        .err-text { color: #ff5252; font-size: 12px; margin-left: 5px; }
     </style>
 </head>
 <body>
@@ -86,7 +87,7 @@
         <h3 style="margin-top:0;">⚠️ 필독: 원활한 구동을 위한 초기 설정</h3>
         <p>이 앱은 브라우저에서 야후 파이낸스 및 연준(FRED) 서버의 데이터를 직접 수신합니다. 보안 정책(CORS) 우회를 위해 다음 설정이 필수입니다.</p>
         <ol style="margin-bottom:0;">
-            <li>크롬 웹스토어에서 <a href="https://chromewebstore.google.com/detail/allow-cors-access-control/lhobafahddgcelffkeicbagnbhfdnjhe" target="_blank">Allow CORS 확장프로그램</a>을 설치합니다.</li>
+            <li>크롬 웹스토어에서 <a href="https://chromewebstore.google.com/detail/allow-cors-access-control/lhobafahddgcelffkeicbaginigeejlf" target="_blank">Allow CORS 확장프로그램</a>을 설치합니다.</li>
             <li>브라우저 우측 상단 확장프로그램 아이콘을 클릭해 <strong>ON 상태(컬러 아이콘)</strong>로 활성화합니다.</li>
             <li>설정이 완료되면 아래에 티커를 입력하고 검색해 주세요.</li>
         </ol>
@@ -97,7 +98,7 @@
         <button id="search-btn">차트 검색</button>
         <button id="toggle-btn">추세선 기반 선형화: ON</button>
         <div id="r2-main-display" class="r2-display" style="display:none;"></div>
-        <span id="status-msg" class="loading">데이터 불러오는 중...</span>
+        <span id="status-msg" class="loading">데이터 처리 중...</span>
     </div>
 
     <div class="main-content">
@@ -141,16 +142,14 @@
         let trendData = [];      
         let detrendedData = [];  
         
-        // 물림일수(Trapped Days) 및 R^2 관련 전역 변수
         let trappedDaysArray = [];
         let validDataLength = 0; 
         
         let isDetrendedMode = true; 
-        let cachedIndicators = {}; // 원본 보조지표 데이터
-        let alignedIndicators = {}; // 메인 차트 날짜에 맞춰진 보조지표 데이터
+        let cachedIndicators = {}; 
+        let alignedIndicators = {}; 
         let activeTicker = "";
 
-        // 날짜 변환 헬퍼 (YYYY-MM-DD 포맷 통일용)
         function toYYYYMMDD(ms) {
             const d = new Date(ms);
             return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -179,9 +178,12 @@
             });
         }
 
-        // 전체 기간(max) 데이터 패치
+        // 데이터 뭉개짐을 방지하기 위해 period1(1900년) ~ period2(현재) 명시적 요청
         async function fetchYahoo(ticker) {
-            const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=max&interval=1d`;
+            const period1 = -2208988800; // 1900-01-01
+            const period2 = Math.floor(Date.now() / 1000);
+            const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?period1=${period1}&period2=${period2}&interval=1d`;
+            
             const res = await fetch(url);
             if (!res.ok) throw new Error('Network response was not ok');
             const data = await res.json();
@@ -189,8 +191,11 @@
             const timestamps = data.chart.result[0].timestamp;
             const closes = data.chart.result[0].indicators.quote[0].close;
             let result = [];
+            
+            if (!timestamps || !closes) return result;
+            
             for (let i = 0; i < timestamps.length; i++) {
-                if (closes[i] !== null) {
+                if (closes[i] !== null && closes[i] !== undefined) {
                     result.push({ x: timestamps[i] * 1000, y: closes[i] });
                 }
             }
@@ -215,7 +220,6 @@
             return result;
         }
 
-        // 지수 기반 선형회귀 추세선 계산
         function calculateTrend(data) {
             let n = data.length;
             if (n === 0) return { tData: [], dData: [] };
@@ -243,7 +247,6 @@
             return { tData, dData };
         }
 
-        // 물림일수(Trapped Days) 계산 (O(N^2) 완전탐색)
         function calculateTrappedDays(data) {
             let n = data.length;
             let trapped = new Array(n).fill(0);
@@ -258,13 +261,11 @@
             }
             
             let maxTrappedDays = Math.max(...trapped);
-            // 최신날짜로부터 최대물림일수를 뺀 기간 계산
             let validLen = Math.max(0, n - maxTrappedDays);
             
             return { trapped, maxTrappedDays, validLen };
         }
 
-        // 결정계수(r^2) 계산기
         function calculateR2(arrX, arrY, validLen) {
             if(validLen < 2) return 0;
             let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
@@ -287,7 +288,6 @@
             return r * r;
         }
 
-        // 주가 차트 기간에 맞춰 보조지표 데이터를 1:1 동기화 (전일 값 유지)
         function alignIndicatorData(indData) {
             let map = new Map();
             for (let d of indData) {
@@ -301,37 +301,29 @@
                 if (map.has(dateStr)) {
                     lastVal = map.get(dateStr);
                 }
-                aligned.push({ x: d.x, y: lastVal }); // 이전 값 포워드 필링
+                aligned.push({ x: d.x, y: lastVal }); 
             }
             return aligned;
         }
 
-        // 체크리스트 r^2 레이블 전체 업데이트
-        function updateAllR2Labels() {
-            // 종가/추세선 vs 물림일수 R^2
+        function updateMainR2Label() {
             const detrendY = detrendedData.map(d => d.y);
             const mainR2 = calculateR2(detrendY, trappedDaysArray, validDataLength);
             
             const mainR2Elem = document.getElementById('r2-main-display');
             mainR2Elem.style.display = 'block';
             mainR2Elem.innerHTML = `종가/추세선 ↔ 물림일수 (r²: ${mainR2.toFixed(4)})`;
+        }
 
-            // 각 보조지표 vs 물림일수 R^2
-            document.querySelectorAll('.indicator-cb').forEach(cb => {
-                const id = cb.value;
-                const baseName = cb.dataset.name;
-                const labelSpan = document.getElementById(`label-${id.replace(/\W/g, '')}`);
-                
-                if (alignedIndicators[id]) {
-                    const indY = alignedIndicators[id].map(d => d.y);
-                    const indR2 = calculateR2(indY, trappedDaysArray, validDataLength);
-                    labelSpan.innerHTML = `${baseName} (r²: ${indR2.toFixed(4)})`;
-                    labelSpan.style.color = '#ffeb3b';
-                } else {
-                    labelSpan.innerHTML = baseName; // 데이터 없으면 원래 이름으로
-                    labelSpan.style.color = '#ddd';
-                }
-            });
+        // 개별 보조지표의 r^2 라벨 업데이트
+        function updateIndicatorR2Label(id, baseName) {
+            const labelSpan = document.getElementById(`label-${id.replace(/\W/g, '')}`);
+            if (alignedIndicators[id] && trappedDaysArray.length > 0) {
+                const indY = alignedIndicators[id].map(d => d.y);
+                const indR2 = calculateR2(indY, trappedDaysArray, validDataLength);
+                labelSpan.innerHTML = `${baseName} (r²: ${indR2.toFixed(4)})`;
+                labelSpan.style.color = '#ffeb3b';
+            }
         }
 
         document.getElementById('search-btn').addEventListener('click', async () => {
@@ -340,28 +332,55 @@
             activeTicker = ticker.toUpperCase();
             
             const status = document.getElementById('status-msg');
+            status.textContent = "메인 차트 데이터 불러오는 중...";
             status.style.display = 'inline';
             
             try {
-                // 1. 메인 데이터 및 추세 계산
+                // 메인 데이터 패치 및 차트 초기화
                 mainData = await fetchYahoo(activeTicker);
                 const calc = calculateTrend(mainData);
                 trendData = calc.tData;
                 detrendedData = calc.dData;
                 
-                // 2. 물림일수 계산
                 const trapCalc = calculateTrappedDays(mainData);
                 trappedDaysArray = trapCalc.trapped;
                 validDataLength = trapCalc.validLen;
-                
-                // 3. 기존에 캐싱된 보조지표가 있다면, 바뀐 메인 데이터 날짜에 맞춰 재정렬
-                for (let id in cachedIndicators) {
-                    alignedIndicators[id] = alignIndicatorData(cachedIndicators[id]);
-                }
 
                 document.getElementById('cors-guide').style.display = 'none'; 
-                updateAllR2Labels();
+                updateMainR2Label();
                 updateChart();
+                
+                // 검색과 동시에 모든 보조지표 데이터를 백그라운드에서 로드하여 r^2값 계산
+                status.textContent = "보조지표 데이터 연동 및 r² 계산 중...";
+                
+                const fetchPromises = [];
+                document.querySelectorAll('.indicator-cb').forEach(cb => {
+                    const id = cb.value;
+                    const source = cb.dataset.source;
+                    const baseName = cb.dataset.name;
+                    const labelSpan = document.getElementById(`label-${id.replace(/\W/g, '')}`);
+                    
+                    if (!cachedIndicators[id]) {
+                        const p = (source === 'yahoo' ? fetchYahoo(id) : fetchFred(id))
+                            .then(data => {
+                                cachedIndicators[id] = data;
+                                alignedIndicators[id] = alignIndicatorData(data);
+                                updateIndicatorR2Label(id, baseName);
+                            })
+                            .catch(err => {
+                                console.error(`[${id}] 실패:`, err);
+                                labelSpan.innerHTML = `${baseName} <span class="err-text">(오류)</span>`;
+                            });
+                        fetchPromises.push(p);
+                    } else {
+                        // 이미 캐싱되어 있으면 재정렬만 수행
+                        alignedIndicators[id] = alignIndicatorData(cachedIndicators[id]);
+                        updateIndicatorR2Label(id, baseName);
+                    }
+                });
+
+                await Promise.all(fetchPromises);
+                
             } catch (err) {
                 alert('데이터를 가져오지 못했습니다. 확장프로그램(Allow CORS)이 켜져 있는지 확인해 주세요.');
                 console.error(err);
@@ -383,38 +402,38 @@
             if (mainData.length > 0) updateChart();
         });
 
+        // 체크박스 클릭 시 (검색 시 자동 로드되므로 즉시 차트에 반영)
         async function handleIndicatorToggle(e) {
             const cb = e.target;
             const id = cb.value;
             const source = cb.dataset.source;
+            const baseName = cb.dataset.name;
             const status = document.getElementById('status-msg');
 
-            if (cb.checked) {
-                if (!cachedIndicators[id]) {
-                    cb.disabled = true;
-                    status.style.display = 'inline';
-                    try {
-                        const rawData = source === 'yahoo' ? await fetchYahoo(id) : await fetchFred(id);
-                        cachedIndicators[id] = rawData;
-                        
-                        // 메인 데이터가 이미 존재하면 바로 동기화 수행
-                        if(mainData.length > 0) {
-                            alignedIndicators[id] = alignIndicatorData(rawData);
-                            updateAllR2Labels();
-                        }
-                    } catch (err) {
-                        alert(`[${id}] 데이터를 가져오는 중 오류가 발생했습니다.`);
-                        cb.checked = false;
-                    } finally {
-                        cb.disabled = false;
-                        status.style.display = 'none';
+            // 방어 코드: 로드가 덜 된 상태에서 체크할 경우
+            if (cb.checked && !cachedIndicators[id]) {
+                cb.disabled = true;
+                status.textContent = "데이터 불러오는 중...";
+                status.style.display = 'inline';
+                try {
+                    const rawData = source === 'yahoo' ? await fetchYahoo(id) : await fetchFred(id);
+                    cachedIndicators[id] = rawData;
+                    if(mainData.length > 0) {
+                        alignedIndicators[id] = alignIndicatorData(rawData);
+                        updateIndicatorR2Label(id, baseName);
                     }
+                } catch (err) {
+                    alert(`[${id}] 데이터를 가져오는 중 오류가 발생했습니다.`);
+                    cb.checked = false;
+                } finally {
+                    cb.disabled = false;
+                    status.style.display = 'none';
                 }
             }
+            
             if (mainData.length > 0) updateChart();
         }
 
-        // 연도 변경 커스텀 점선 플러그인
         const yearLinesPlugin = {
             id: 'yearLines',
             beforeDraw: (chart) => {
@@ -425,7 +444,7 @@
                 if (!data || data.length === 0) return;
 
                 ctx.save();
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
                 ctx.lineWidth = 1;
                 ctx.setLineDash([5, 5]);
                 ctx.beginPath();
@@ -435,7 +454,6 @@
                     const currYear = new Date(data[i].x).getFullYear();
                     
                     if (currYear > prevYear) {
-                        // 두 거래일 사이 중간 지점에 선 그리기
                         const xPos = (xAxis.getPixelForValue(data[i-1].x) + xAxis.getPixelForValue(data[i].x)) / 2;
                         ctx.moveTo(xPos, yAxis.top);
                         ctx.lineTo(xPos, yAxis.bottom);
@@ -456,7 +474,7 @@
                 x: {
                     type: 'time',
                     time: { tooltipFormat: 'yyyy-MM-dd' },
-                    grid: { color: 'rgba(255,255,255,0.1)', drawOnChartArea: false }, // 기본 세로 그리드 제거 (커스텀 점선만 표시)
+                    grid: { color: 'rgba(255,255,255,0.1)', drawOnChartArea: false }, 
                     ticks: { color: '#aaa' }
                 }
             };
@@ -503,7 +521,7 @@
                     const yAxisID = 'y_' + id;
                     datasets.push({
                         label: baseName,
-                        data: alignedIndicators[id], // 메인 차트와 날짜가 완벽히 동기화된 배열 
+                        data: alignedIndicators[id], 
                         borderColor: IND_COLORS[colorIndex % IND_COLORS.length],
                         borderWidth: 1.5, pointRadius: 0, yAxisID: yAxisID
                     });
@@ -528,7 +546,7 @@
                         tooltip: { backgroundColor: 'rgba(0,0,0,0.8)', titleColor: '#fff', bodyColor: '#fff' }
                     }
                 },
-                plugins: [yearLinesPlugin] // 연도 변경 점선 플러그인 등록
+                plugins: [yearLinesPlugin] 
             });
         }
 
