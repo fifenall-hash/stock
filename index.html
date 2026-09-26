@@ -55,8 +55,15 @@
         .r2-display { font-size: 14px; font-weight: bold; color: #ffeb3b; padding: 6px 10px; background-color: #333; border-radius: 4px; }
         .loading { font-size: 14px; color: #ffeb3b; display: none; margin-left: 10px; }
 
-        .latest-info { display: flex; gap: 15px; font-size: 14px; padding: 6px 12px; background-color: #2a2a2a; border-radius: 4px; border: 1px solid #444; margin-left: auto; }
+        /* 분리된 물림일수 체크박스 */
+        .trapped-cb-label { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: bold; color: #ff5252; background: #2a2a2a; border: 1px solid #ff5252; padding: 5px 12px; border-radius: 4px; cursor: pointer; }
+        .trapped-cb-label:hover { background: #331a1a; }
+        .trapped-cb-label input { cursor: pointer; transform: scale(1.1); margin: 0; }
+
+        /* 최신 데이터 패널 */
+        .latest-info { display: flex; gap: 15px; font-size: 14px; padding: 6px 12px; background-color: #2a2a2a; border-radius: 4px; border: 1px solid #444; margin-left: auto; flex-wrap: wrap; }
         .latest-info span { color: var(--accent); font-weight: bold; }
+        .latest-info .predicted-highlight { color: #ff5252; } /* 예상물림일수 강조색 */
 
         .main-content { display: flex; gap: 20px; flex: 1; min-height: 0; }
         .chart-container { flex: 3; background-color: var(--panel-bg); border-radius: 8px; padding: 15px; position: relative; }
@@ -73,10 +80,9 @@
         .ind-text { display: inline-block; word-break: keep-all; }
         .err-text { color: #ff5252; font-size: 12px; margin-left: 5px; }
         
-        .log-badge, .detrend-badge, .base-badge { font-size: 9px; font-weight: bold; color: white; padding: 2px 4px; border-radius: 3px; margin-left: 4px; vertical-align: text-top; }
+        .log-badge, .detrend-badge { font-size: 9px; font-weight: bold; color: white; padding: 2px 4px; border-radius: 3px; margin-left: 4px; vertical-align: text-top; }
         .log-badge { background-color: #7e57c2; }
         .detrend-badge { background-color: #ff9800; }
-        .base-badge { background-color: #4CAF50; }
 
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; }
         .modal-content { background: var(--panel-bg); padding: 25px; border-radius: 8px; max-width: 500px; color: #fff; border-top: 4px solid var(--accent); box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
@@ -108,12 +114,20 @@
         <div class="top-metrics">
             <div id="r2-trend-display" class="r2-display" style="display:none;"></div>
             <div id="r2-main-display" class="r2-display" style="display:none;"></div>
+            
+            <!-- 분리된 물림일수 체크박스 -->
+            <label class="trapped-cb-label" id="trapped-cb-container" style="display:none;">
+                <input type="checkbox" id="trapped-cb"> 📈 물림일수 오버랩
+            </label>
+            
             <button id="info-modal-btn" class="info-btn">물림일수란?</button>
             
+            <!-- 최신 데이터 및 예상물림일수 -->
             <div id="latest-data-display" class="latest-info" style="display:none;">
                 <div>최신 일자: <span id="latest-date">-</span></div>
                 <div>종가: <span id="latest-close">-</span></div>
                 <div>종가/추세: <span id="latest-detrend">-</span></div>
+                <div>예상물림일수: <span id="latest-predicted" class="predicted-highlight">-</span>일</div>
             </div>
         </div>
     </div>
@@ -123,6 +137,7 @@
             <canvas id="mainChart"></canvas>
         </div>
         <div class="indicator-container" id="indicator-panel">
+            <!-- 자바스크립트로 체크박스 목록 자동 생성 -->
         </div>
     </div>
 
@@ -132,8 +147,10 @@
             <p style="line-height:1.6; font-size:14px; color:#ddd;">
                 해당 거래일의 종가보다 더 낮은 종가가 <strong>미래 시점</strong>에 등장한 총 일수를 뜻합니다.<br><br>
                 즉, 물림일수가 높을수록 현재 주가가 단기~중기적으로 고평가되어 오랫동안 손실(물림) 구간에 갇힐 확률이 높았다는 의미입니다.<br><br>
+                <strong style="color:#ff5252;">🔥 예상물림일수 추정</strong><br>
+                과거의 (종가/추세선) 비율과 (물림일수) 간의 선형 회귀 방정식($Y = mX + c$)을 도출한 후, 가장 최신 일자의 종가/추세선 값을 대입하여 향후 며칠이나 물려있을지 통계적으로 추정한 값입니다.<br><br>
                 <strong style="color:#ffeb3b;">※ 제외 구간 결정 방법</strong><br>
-                전체 기간을 탐색하여 <strong>'가장 크게 발생한 물림일수(최대 물림일수)'</strong>를 찾습니다. 그 후, 차트의 최신 날짜로부터 역산하여 이 '최대 물림일수'만큼의 최근 기간은 잘라냅니다. 최근 구간은 아직 미래 데이터가 충분히 쌓이지 않아 물림일수가 기계적으로 작게 측정되는 왜곡이 발생하기 때문에 상관관계(r²) 계산에서 안전하게 제외시켰습니다.
+                전체 기간을 탐색하여 '가장 크게 발생한 물림일수'를 찾고, 최신 날짜로부터 역산하여 이 기간만큼은 잘라냅니다. 최근 구간은 아직 미래 데이터가 충분히 쌓이지 않아 물림일수가 기계적으로 작게 측정되므로 상관관계 및 선형회귀 계산에서 안전하게 제외시켰습니다.
             </p>
             <button class="modal-close-btn" id="close-modal-btn">닫기</button>
         </div>
@@ -145,9 +162,6 @@
         }
 
         const INDICATORS = {
-            'custom': [
-                { id: 'TRAPPED_DAYS', name: '물림일수', scale: 'linear', detrend: false }
-            ],
             'yahoo': [
                 { id: 'DX-Y.NYB', name: '달러 인덱스', scale: 'linear', detrend: false },
                 { id: 'CL=F', name: 'WTI 원유 선물', scale: 'linear', detrend: false },
@@ -168,7 +182,8 @@
             ]
         };
         
-        const IND_COLORS = ['#ff5252', '#00e676', '#29b6f6', '#ffea00', '#ff9100', '#d500f9', '#651fff', '#00b0ff', '#1de9b6'];
+        // 색상 복원: 첫 번째를 다시 초록(#00e676)으로
+        const IND_COLORS = ['#00e676', '#29b6f6', '#ffea00', '#ff9100', '#f50057', '#d500f9', '#651fff', '#00b0ff', '#1de9b6'];
 
         let chartInstance = null;
         let mainData = [];       
@@ -197,12 +212,10 @@
             const panel = document.getElementById('indicator-panel');
             panel.innerHTML = '';
             
-            ['custom', 'yahoo', 'fred'].forEach(source => {
+            ['yahoo', 'fred'].forEach(source => {
                 const group = document.createElement('div');
                 group.className = 'indicator-group';
-                
-                let title = source === 'custom' ? '자체 분석 (Custom)' : (source === 'yahoo' ? '야후 파이낸스' : '미연준 (FRED)');
-                group.innerHTML = `<h3>${title}</h3>`;
+                group.innerHTML = `<h3>${source === 'yahoo' ? '야후 파이낸스' : '미연준 (FRED)'}</h3>`;
                 
                 INDICATORS[source].forEach(ind => {
                     const label = document.createElement('label');
@@ -232,7 +245,6 @@
             const timestamps = data.chart.result[0].timestamp;
             const closes = data.chart.result[0].indicators.quote[0].close;
             let result = [];
-            
             if (!timestamps || !closes) return result;
             
             for (let i = 0; i < timestamps.length; i++) {
@@ -279,7 +291,6 @@
             let c = (sumY - m * sumX) / n;
             
             let tData = []; let dData = [];
-            
             for (let i = 0; i < data.length; i++) {
                 if (data[i].y > 0) {
                     let x = (data[i].x - x0) / 86400000;
@@ -297,7 +308,6 @@
         function calculateTrappedDays(data) {
             let n = data.length;
             let trapped = new Array(n).fill(0);
-            
             for (let i = 0; i < n; i++) {
                 let count = 0;
                 let currentClose = data[i].y;
@@ -306,26 +316,34 @@
                 }
                 trapped[i] = count;
             }
-            
             let maxTrappedDays = Math.max(...trapped);
             let validLen = Math.max(0, n - maxTrappedDays);
             return { trapped, maxTrappedDays, validLen };
         }
 
-        function calculateR2(arrX, arrY, validLen) {
-            if(validLen < 2) return 0;
+        // r^2, 회귀 기울기(m), 절편(c)을 모두 반환하는 선형 회귀 함수
+        function calculateRegression(arrX, arrY, validLen) {
+            if(validLen < 2) return { r2: 0, m: 0, c: 0 };
             let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
             let count = 0;
+            
             for(let i = 0; i < validLen; i++) {
                 if(arrX[i] === null || arrY[i] === null || isNaN(arrX[i]) || isNaN(arrY[i])) continue;
                 let x = arrX[i]; let y = arrY[i];
                 sumX += x; sumY += y; sumXY += x * y; sumX2 += x * x; sumY2 += y * y; count++;
             }
-            if(count < 2) return 0;
+            
+            if(count < 2) return { r2: 0, m: 0, c: 0 };
+            
             let num = (count * sumXY) - (sumX * sumY);
             let den = Math.sqrt((count * sumX2 - sumX*sumX) * (count * sumY2 - sumY*sumY));
-            if(den === 0) return 0;
-            let r = num / den; return r * r;
+            let r2 = den === 0 ? 0 : (num / den) * (num / den);
+            
+            let denM = (count * sumX2) - (sumX * sumX);
+            let m = denM === 0 ? 0 : ((count * sumXY) - (sumX * sumY)) / denM;
+            let c = (sumY - m * sumX) / count;
+            
+            return { r2, m, c };
         }
 
         function alignIndicatorData(indData) {
@@ -343,7 +361,6 @@
                 let dateStr = toYYYYMMDD(d.x);
                 if (mapRaw.has(dateStr)) lastRaw = mapRaw.get(dateStr);
                 if (mapDetrend.has(dateStr)) lastDetrend = mapDetrend.get(dateStr);
-                
                 alignedRaw.push({ x: d.x, y: lastRaw }); 
                 alignedDetrended.push({ x: d.x, y: lastDetrend });
             }
@@ -353,24 +370,32 @@
         function updateMetricsDisplays() {
             const logPrice = mainData.map(d => Math.log(d.y));
             const logTrend = trendData.map(d => Math.log(d.y));
-            const trendR2 = calculateR2(logPrice, logTrend, mainData.length);
+            const trendReg = calculateRegression(logPrice, logTrend, mainData.length);
             const trendR2Elem = document.getElementById('r2-trend-display');
             trendR2Elem.style.display = 'block';
-            trendR2Elem.innerHTML = `주가 ↔ 지수추세선 (r²: ${trendR2.toFixed(4)})`;
+            trendR2Elem.innerHTML = `주가 ↔ 지수추세선 (r²: ${trendReg.r2.toFixed(4)})`;
 
             const detrendY = detrendedData.map(d => d.y);
-            const mainR2 = calculateR2(detrendY, trappedDaysArray, validDataLength);
+            const mainReg = calculateRegression(detrendY, trappedDaysArray, validDataLength);
             const mainR2Elem = document.getElementById('r2-main-display');
             mainR2Elem.style.display = 'block';
-            mainR2Elem.innerHTML = `종가/추세선 ↔ 물림일수 (r²: ${mainR2.toFixed(4)})`;
+            mainR2Elem.innerHTML = `종가/추세선 ↔ 물림일수 (r²: ${mainReg.r2.toFixed(4)})`;
             
             document.getElementById('info-modal-btn').style.display = 'block';
+            document.getElementById('trapped-cb-container').style.display = 'flex'; // 물림일수 체크박스 표시
 
             if (mainData.length > 0) {
                 const lastIdx = mainData.length - 1;
+                const latestDetrendVal = detrendedData[lastIdx].y;
+                
+                // 예상물림일수 산출 (Y = mX + c)
+                let predictedTrapped = Math.round(mainReg.m * latestDetrendVal + mainReg.c);
+                if (predictedTrapped < 0) predictedTrapped = 0; // 음수 방지
+
                 document.getElementById('latest-date').textContent = toYYYYMMDD(mainData[lastIdx].x);
                 document.getElementById('latest-close').textContent = mainData[lastIdx].y.toFixed(2);
-                document.getElementById('latest-detrend').textContent = detrendedData[lastIdx].y.toFixed(4);
+                document.getElementById('latest-detrend').textContent = latestDetrendVal.toFixed(4);
+                document.getElementById('latest-predicted').textContent = predictedTrapped;
                 document.getElementById('latest-data-display').style.display = 'flex';
             }
         }
@@ -382,13 +407,6 @@
             const canDetrend = cb.dataset.detrend === 'true';
             const labelSpan = document.getElementById(`label-${id.replace(/\W/g, '')}`);
             
-            // 물림일수 자체 지표인 경우 예외 처리
-            if (id === 'TRAPPED_DAYS') {
-                labelSpan.innerHTML = `${baseName} <span class="base-badge">기준 지표</span>`;
-                labelSpan.style.color = '#ffeb3b';
-                return;
-            }
-
             let badges = '';
             if (isDetrendedMode && canDetrend) badges = ` <span class="detrend-badge">종가/추세</span>`;
             else if (scale === 'log') badges = ` <span class="log-badge">LOG</span>`;
@@ -396,9 +414,9 @@
             if (alignedIndicators[id] && trappedDaysArray.length > 0) {
                 const dataToUse = (isDetrendedMode && canDetrend) ? alignedIndicators[id].detrended : alignedIndicators[id].raw;
                 const indY = dataToUse.map(d => d.y);
-                const indR2 = calculateR2(indY, trappedDaysArray, validDataLength);
+                const reg = calculateRegression(indY, trappedDaysArray, validDataLength);
                 
-                labelSpan.innerHTML = `${baseName}${badges} (vs 물림일수 r²: ${indR2.toFixed(4)})`;
+                labelSpan.innerHTML = `${baseName}${badges} (vs 물림일수 r²: ${reg.r2.toFixed(4)})`;
                 labelSpan.style.color = '#ffeb3b';
             } else {
                 labelSpan.innerHTML = `${baseName}${badges}`;
@@ -431,12 +449,10 @@
                     if (i < validDataLength) {
                         trappedDataObj.push({ x: mainData[i].x, y: trappedDaysArray[i] });
                     } else {
-                        // 신뢰할 수 없는 미래 데이터 구간은 차트에서 끊어지도록 Null 처리
                         trappedDataObj.push({ x: mainData[i].x, y: null });
                     }
                 }
-                cachedIndicators['TRAPPED_DAYS'] = trappedDataObj;
-                alignedIndicators['TRAPPED_DAYS'] = { raw: trappedDataObj, detrended: trappedDataObj };
+                cachedIndicators['TRAPPED_DAYS'] = trappedDataObj; // 물림일수는 별도로 정렬/선형화 필요 없음
 
                 document.getElementById('cors-guide').style.display = 'none'; 
                 document.getElementById('reset-zoom-btn').style.display = 'inline-block';
@@ -451,11 +467,6 @@
                     const id = cb.value;
                     const source = cb.dataset.source;
                     
-                    if (source === 'custom') {
-                        updateIndicatorR2Label(cb);
-                        return; // 커스텀 지표는 페치 스킵
-                    }
-
                     if (!cachedIndicators[id]) {
                         const p = (source === 'yahoo' ? fetchYahoo(id) : fetchFred(id))
                             .then(data => {
@@ -499,6 +510,11 @@
             if (mainData.length > 0) updateChart();
         });
 
+        // 분리된 물림일수 체크박스 이벤트
+        document.getElementById('trapped-cb').addEventListener('change', () => {
+            if (mainData.length > 0) updateChart();
+        });
+
         document.getElementById('reset-zoom-btn').addEventListener('click', () => {
             if (chartInstance) chartInstance.resetZoom();
         });
@@ -510,14 +526,6 @@
             const status = document.getElementById('status-msg');
 
             if (cb.checked && !cachedIndicators[id]) {
-                if (source === 'custom') {
-                    if (mainData.length === 0) {
-                        alert('메인 차트를 먼저 검색해 주세요.');
-                        cb.checked = false;
-                    }
-                    return;
-                }
-
                 cb.disabled = true;
                 status.textContent = "데이터 로딩 중...";
                 status.style.display = 'inline';
@@ -582,6 +590,7 @@
                 }
             };
 
+            // 메인 주가/추세 데이터
             if (isDetrendedMode) {
                 datasets.push({ label: `${activeTicker} 종가/추세선`, data: detrendedData, borderColor: '#ffffff', borderWidth: 1.5, pointRadius: 0, yAxisID: 'y', spanGaps: true });
                 datasets.push({ label: '기준선 (1.0)', data: [{ x: mainData[0].x, y: 1 }, { x: mainData[mainData.length - 1].x, y: 1 }], borderColor: 'rgba(255, 255, 255, 0.4)', borderWidth: 1, borderDash: [2, 2], pointRadius: 0, yAxisID: 'y' });
@@ -592,6 +601,18 @@
                 scales.y = { type: 'logarithmic', position: 'left', grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: '#aaa' } };
             }
 
+            // 물림일수(상단 체크박스) 차트 추가
+            if (document.getElementById('trapped-cb').checked && cachedIndicators['TRAPPED_DAYS']) {
+                datasets.push({
+                    label: '물림일수 [기준]',
+                    data: cachedIndicators['TRAPPED_DAYS'], 
+                    borderColor: '#ff5252', // 눈에 띄게 빨간색으로 고정
+                    borderWidth: 1.5, pointRadius: 0, yAxisID: 'y_trapped', spanGaps: true
+                });
+                scales['y_trapped'] = { type: 'linear', position: 'right', display: false };
+            }
+
+            // 일반 보조지표 추가
             let colorIndex = 0;
             document.querySelectorAll('.indicator-cb:checked').forEach(cb => {
                 const id = cb.value;
@@ -610,8 +631,10 @@
                     }
 
                     datasets.push({
-                        label: id === 'TRAPPED_DAYS' ? baseName : (useDetrended ? `${baseName} [추세적용]` : baseName),
-                        data: plotData, borderColor: IND_COLORS[colorIndex % IND_COLORS.length], borderWidth: 1.5, pointRadius: 0, yAxisID: yAxisID, spanGaps: true
+                        label: useDetrended ? `${baseName} [추세적용]` : baseName,
+                        data: plotData, 
+                        borderColor: IND_COLORS[colorIndex % IND_COLORS.length], 
+                        borderWidth: 1.5, pointRadius: 0, yAxisID: yAxisID, spanGaps: true
                     });
                     
                     scales[yAxisID] = { type: currentScale, position: 'right', display: false };
