@@ -1,15 +1,20 @@
 {
-  "name": "주식 커스텀 분석 차트",
-  "short_name": "StockApp",
+  "name": "매크로 오버레이 차트 PWA",
+  "short_name": "매크로 차트",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#f8f9fa",
-  "theme_color": "#2c3e50",
+  "background_color": "#121212",
+  "theme_color": "#121212",
   "icons": [
     {
-      "src": "icon.png",
-      "sizes": "192x192 512x512",
-      "type": "image/png"
+      "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iIzI5YjZmNiI+PHBhdGggZD0iTTMgM3YxOGgxOFYzaC0xOHptMTYgMTZINVY1aDE0djE0eiIgLz48cGF0aCBkPSJNMTEgMTNsMy0zIDMgMy0zIDMtMy0zeiIgLz48L3N2Zz4=",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iIzI5YjZmNiI+PHBhdGggZD0iTTMgM3YxOGgxOFYzaC0xOHptMTYgMTZINVY1aDE0djE0eiIgLz48cGF0aCBkPSJNMTEgMTNsMy0zIDMgMy0zIDMtMy0zeiIgLz48L3N2Zz4=",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
     }
   ]
 }
