@@ -22,7 +22,6 @@
             --bg-color: #121212;
             --panel-bg: #1e1e1e;
             --text-main: #ffffff;
-            --text-muted: #aaaaaa;
             --accent: #29b6f6;
             --accent-hover: #039be5;
         }
@@ -80,18 +79,25 @@
             border-radius: 8px; padding: 15px; overflow-y: auto;
         }
         .indicator-group { margin-bottom: 20px; }
-        .indicator-group h3 { margin-top: 0; font-size: 16px; color: var(--accent); border-bottom: 1px solid #333; padding-bottom: 5px; }
+        .indicator-group h3 { margin-top: 0; font-size: 16px; color: var(--accent); border-bottom: 1px solid #333; padding-bottom: 10px; }
+        
         .checkbox-label {
             display: flex; align-items: center; justify-content: space-between; 
             margin-bottom: 10px; cursor: pointer; color: #ddd; font-size: 14px;
-            background: #2a2a2a; padding: 6px 10px; border-radius: 4px;
+            background: #2a2a2a; padding: 10px 10px; border-radius: 4px; transition: background 0.2s;
         }
         .checkbox-label:hover { background: #333; }
-        .checkbox-main-group { display: flex; align-items: center; gap: 8px; }
-        .log-toggle-group { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #888; }
-        input[type="checkbox"] { cursor: pointer; }
-        .ind-text { display: inline-block; }
+        .checkbox-main-group { display: flex; align-items: center; gap: 8px; width: 100%; }
+        input[type="checkbox"] { cursor: pointer; transform: scale(1.1); margin-right: 5px; }
+        
+        .ind-text { display: inline-block; word-break: keep-all; }
         .err-text { color: #ff5252; font-size: 12px; margin-left: 5px; }
+        
+        /* 로그 뱃지 스타일 */
+        .log-badge {
+            font-size: 10px; font-weight: bold; background-color: #7e57c2; color: white;
+            padding: 2px 5px; border-radius: 3px; margin-left: 6px; vertical-align: text-top;
+        }
     </style>
 </head>
 <body>
@@ -133,25 +139,25 @@
             navigator.serviceWorker.register('sw.js').catch(err => console.log('SW 등록 실패:', err));
         }
 
+        // 지표 성격에 따라 로그/선형 스케일 사전 정의
         const INDICATORS = {
             'yahoo': [
-                { id: 'DX-Y.NYB', name: '달러 인덱스' },
-                { id: 'CL=F', name: 'WTI 원유 선물' },
-                { id: 'HG=F', name: '구리 선물' },
-                { id: '^IRX', name: '13주 만기 국채 금리' },
-                // 야후 리스트에 있던 2년물 국채 금리('^US2Y')를 삭제합니다.
-                { id: '^VXN', name: '나스닥 변동성 지수' },
-                { id: 'BTC-USD', name: '비트코인' },
-                { id: 'GC=F', name: '금 선물' }
+                { id: 'DX-Y.NYB', name: '달러 인덱스', scale: 'linear' },
+                { id: 'CL=F', name: 'WTI 원유 선물', scale: 'linear' },
+                { id: 'HG=F', name: '구리 선물', scale: 'linear' },
+                { id: '^IRX', name: '13주 만기 국채 금리', scale: 'linear' },
+                { id: '^VXN', name: '나스닥 변동성 지수', scale: 'linear' },
+                { id: 'BTC-USD', name: '비트코인', scale: 'log' }, // 장기 기하급수 성장
+                { id: 'GC=F', name: '금 선물', scale: 'log' }      // 장기 우상향 인플레이션 반영
             ],
             'fred': [
-                { id: 'DGS2', name: '2년물 국채 금리' }, // FRED 리스트에 DGS2 티커로 새롭게 추가합니다.
-                { id: 'BAMLH0A0HYM2', name: '하이일드 스프레드' },
-                { id: 'WALCL', name: '연준 총자산 규모' },
-                { id: 'DFII10', name: '미국 10년물 실질 금리' },
-                { id: 'T10Y2Y', name: '장단기 금리차' },
-                { id: 'M2SL', name: 'M2 통화량' },
-                { id: 'STLFSI4', name: '금융스트레스 지수' }
+                { id: 'DGS2', name: '2년물 국채 금리', scale: 'linear' },
+                { id: 'BAMLH0A0HYM2', name: '하이일드 스프레드', scale: 'linear' },
+                { id: 'WALCL', name: '연준 총자산 규모', scale: 'log' }, // 화폐 발행량 팽창
+                { id: 'DFII10', name: '미국 10년물 실질 금리', scale: 'linear' }, // 음수 존재
+                { id: 'T10Y2Y', name: '장단기 금리차', scale: 'linear' },          // 음수 존재
+                { id: 'M2SL', name: 'M2 통화량', scale: 'log' },         // 지속적 유동성 팽창
+                { id: 'STLFSI4', name: '금융스트레스 지수', scale: 'linear' }      // 음수 존재
             ]
         };
         const IND_COLORS = ['#00e676', '#29b6f6', '#ffea00', '#ff9100', '#f50057', '#d500f9', '#651fff', '#00b0ff', '#1de9b6'];
@@ -174,7 +180,7 @@
             return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
         }
 
-        // 보조지표 UI 생성 (Log 체크박스 포함)
+        // 보조지표 UI 생성
         function initIndicatorsUI() {
             const panel = document.getElementById('indicator-panel');
             panel.innerHTML = '';
@@ -185,28 +191,19 @@
                 group.innerHTML = `<h3>${source === 'yahoo' ? '야후 파이낸스' : '미연준 (FRED)'}</h3>`;
                 
                 INDICATORS[source].forEach(ind => {
+                    const isLog = ind.scale === 'log';
+                    const logBadge = isLog ? `<span class="log-badge">LOG</span>` : '';
+                    
                     const label = document.createElement('label');
                     label.className = 'checkbox-label';
                     label.innerHTML = `
                         <div class="checkbox-main-group">
-                            <input type="checkbox" class="indicator-cb" value="${ind.id}" data-source="${source}" data-name="${ind.name}"> 
-                            <span class="ind-text" id="label-${ind.id.replace(/\W/g, '')}">${ind.name}</span>
-                        </div>
-                        <div class="log-toggle-group">
-                            <input type="checkbox" class="log-cb" value="${ind.id}"> Log
+                            <input type="checkbox" class="indicator-cb" value="${ind.id}" data-source="${source}" data-name="${ind.name}" data-scale="${ind.scale}"> 
+                            <span class="ind-text" id="label-${ind.id.replace(/\W/g, '')}">${ind.name}${logBadge}</span>
                         </div>
                     `;
                     
-                    // 메인 지표 체크 이벤트
                     label.querySelector('.indicator-cb').addEventListener('change', handleIndicatorToggle);
-                    // Log 스케일 체크 이벤트 (체크 상태 변경 시 차트 재렌더링)
-                    label.querySelector('.log-cb').addEventListener('change', (e) => {
-                        const mainCb = document.querySelector(`.indicator-cb[value="${e.target.value}"]`);
-                        if (mainCb.checked && mainData.length > 0) {
-                            updateChart();
-                        }
-                    });
-                    
                     group.appendChild(label);
                 });
                 panel.appendChild(group);
@@ -341,7 +338,6 @@
         }
 
         function updateMainR2Label() {
-            // 1. 주가 ↔ 추세선 (로그 변환 후 회귀분석 기반 r^2)
             const logPrice = mainData.map(d => Math.log(d.y));
             const logTrend = trendData.map(d => Math.log(d.y));
             const trendR2 = calculateR2(logPrice, logTrend, mainData.length);
@@ -350,7 +346,6 @@
             trendR2Elem.style.display = 'block';
             trendR2Elem.innerHTML = `주가 ↔ 지수추세선 (r²: ${trendR2.toFixed(4)})`;
 
-            // 2. 종가/추세선 ↔ 물림일수
             const detrendY = detrendedData.map(d => d.y);
             const mainR2 = calculateR2(detrendY, trappedDaysArray, validDataLength);
             
@@ -359,13 +354,23 @@
             mainR2Elem.innerHTML = `종가/추세선 ↔ 물림일수 (r²: ${mainR2.toFixed(4)})`;
         }
 
-        function updateIndicatorR2Label(id, baseName) {
+        // 보조지표 r^2 라벨 직관적으로 업데이트 (vs 물림일수 명시)
+        function updateIndicatorR2Label(cb) {
+            const id = cb.value;
+            const baseName = cb.dataset.name;
+            const scale = cb.dataset.scale;
             const labelSpan = document.getElementById(`label-${id.replace(/\W/g, '')}`);
+            
+            const logBadge = scale === 'log' ? ` <span class="log-badge">LOG</span>` : '';
+
             if (alignedIndicators[id] && trappedDaysArray.length > 0) {
                 const indY = alignedIndicators[id].map(d => d.y);
                 const indR2 = calculateR2(indY, trappedDaysArray, validDataLength);
-                labelSpan.innerHTML = `${baseName} (r²: ${indR2.toFixed(4)})`;
+                
+                labelSpan.innerHTML = `${baseName}${logBadge} (vs 물림일수 r²: ${indR2.toFixed(4)})`;
                 labelSpan.style.color = '#ffeb3b';
+            } else {
+                labelSpan.innerHTML = `${baseName}${logBadge}`;
             }
         }
 
@@ -389,7 +394,7 @@
                 validDataLength = trapCalc.validLen;
 
                 document.getElementById('cors-guide').style.display = 'none'; 
-                document.getElementById('reset-zoom-btn').style.display = 'inline-block'; // 줌 초기화 버튼 표시
+                document.getElementById('reset-zoom-btn').style.display = 'inline-block';
                 
                 updateMainR2Label();
                 updateChart();
@@ -400,24 +405,23 @@
                 document.querySelectorAll('.indicator-cb').forEach(cb => {
                     const id = cb.value;
                     const source = cb.dataset.source;
-                    const baseName = cb.dataset.name;
-                    const labelSpan = document.getElementById(`label-${id.replace(/\W/g, '')}`);
                     
                     if (!cachedIndicators[id]) {
                         const p = (source === 'yahoo' ? fetchYahoo(id) : fetchFred(id))
                             .then(data => {
                                 cachedIndicators[id] = data;
                                 alignedIndicators[id] = alignIndicatorData(data);
-                                updateIndicatorR2Label(id, baseName);
+                                updateIndicatorR2Label(cb);
                             })
                             .catch(err => {
                                 console.error(`[${id}] 실패:`, err);
-                                labelSpan.innerHTML = `${baseName} <span class="err-text">(오류)</span>`;
+                                const labelSpan = document.getElementById(`label-${id.replace(/\W/g, '')}`);
+                                labelSpan.innerHTML += ` <span class="err-text">(오류)</span>`;
                             });
                         fetchPromises.push(p);
                     } else {
                         alignedIndicators[id] = alignIndicatorData(cachedIndicators[id]);
-                        updateIndicatorR2Label(id, baseName);
+                        updateIndicatorR2Label(cb);
                     }
                 });
 
@@ -444,7 +448,6 @@
             if (mainData.length > 0) updateChart();
         });
 
-        // 줌 초기화 이벤트
         document.getElementById('reset-zoom-btn').addEventListener('click', () => {
             if (chartInstance) {
                 chartInstance.resetZoom();
@@ -455,7 +458,6 @@
             const cb = e.target;
             const id = cb.value;
             const source = cb.dataset.source;
-            const baseName = cb.dataset.name;
             const status = document.getElementById('status-msg');
 
             if (cb.checked && !cachedIndicators[id]) {
@@ -467,7 +469,7 @@
                     cachedIndicators[id] = rawData;
                     if(mainData.length > 0) {
                         alignedIndicators[id] = alignIndicatorData(rawData);
-                        updateIndicatorR2Label(id, baseName);
+                        updateIndicatorR2Label(cb);
                     }
                 } catch (err) {
                     alert(`[${id}] 데이터를 가져오는 중 오류가 발생했습니다.`);
@@ -502,7 +504,6 @@
                     
                     if (currYear > prevYear) {
                         const xPos = (xAxis.getPixelForValue(data[i-1].x) + xAxis.getPixelForValue(data[i].x)) / 2;
-                        // 화면 안에 존재하는 선형 위치에만 렌더링 (줌 상태 시 부하 방지)
                         if (xPos >= xAxis.left && xPos <= xAxis.right) {
                             ctx.moveTo(xPos, yAxis.top);
                             ctx.lineTo(xPos, yAxis.bottom);
@@ -567,7 +568,7 @@
             document.querySelectorAll('.indicator-cb:checked').forEach(cb => {
                 const id = cb.value;
                 const baseName = cb.dataset.name;
-                const isLogScale = document.querySelector(`.log-cb[value="${id}"]`).checked;
+                const scale = cb.dataset.scale; // HTML 속성에서 스케일 설정 가져오기
 
                 if (alignedIndicators[id]) {
                     const yAxisID = 'y_' + id;
@@ -579,7 +580,7 @@
                     });
                     
                     scales[yAxisID] = {
-                        type: isLogScale ? 'logarithmic' : 'linear', 
+                        type: scale, // 'logarithmic' 또는 'linear' 자동 적용
                         position: 'right', display: false 
                     };
                     colorIndex++;
@@ -598,15 +599,8 @@
                         legend: { labels: { color: '#fff' } },
                         tooltip: { backgroundColor: 'rgba(0,0,0,0.8)', titleColor: '#fff', bodyColor: '#fff' },
                         zoom: {
-                            pan: {
-                                enabled: true,
-                                mode: 'x' // X축으로만 드래그 이동 가능
-                            },
-                            zoom: {
-                                wheel: { enabled: true },
-                                pinch: { enabled: true },
-                                mode: 'x' // X축으로만 확대/축소 가능
-                            }
+                            pan: { enabled: true, mode: 'x' },
+                            zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
                         }
                     }
                 },
