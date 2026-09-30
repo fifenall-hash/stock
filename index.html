@@ -46,6 +46,8 @@
         #search-btn:hover { background-color: var(--accent-hover); }
         #toggle-btn { background-color: #4CAF50; color: white; }
         #toggle-btn.off { background-color: #555; color: #ccc; }
+        #log-btn { background-color: #9c27b0; color: white; }
+        #log-btn.off { background-color: #555; color: #ccc; }
         #reset-zoom-btn { background-color: #757575; color: white; display: none; }
         #reset-zoom-btn:hover { background-color: #999; }
         
@@ -106,6 +108,7 @@
         <input type="text" id="ticker-input" placeholder="티커 입력 (예: TQQQ)" value="TQQQ">
         <button id="search-btn">차트 검색</button>
         <button id="toggle-btn">추세선 기반 선형화: ON</button>
+        <button id="log-btn">로그: 활성화</button>
         <button id="reset-zoom-btn">줌 초기화</button>
         <span id="status-msg" class="loading">데이터 처리 중...</span>
     </div>
@@ -195,6 +198,7 @@
         
         let isDetrendedMode = true; 
         let cachedIndicators = {}; 
+        let isLogMode = true;
         let alignedIndicators = {}; 
         let activeTicker = "";
 
@@ -403,13 +407,22 @@
         function updateIndicatorR2Label(cb) {
             const id = cb.value;
             const baseName = cb.dataset.name;
-            const scale = cb.dataset.scale;
             const canDetrend = cb.dataset.detrend === 'true';
             const labelSpan = document.getElementById(`label-${id.replace(/\W/g, '')}`);
             
+            if (id === 'TRAPPED_DAYS') {
+                labelSpan.innerHTML = `${baseName} <span class="base-badge">기준 지표</span>`;
+                labelSpan.style.color = '#ffeb3b';
+                return;
+            }
+
             let badges = '';
-            if (isDetrendedMode && canDetrend) badges = ` <span class="detrend-badge">종가/추세</span>`;
-            else if (scale === 'log') badges = ` <span class="log-badge">LOG</span>`;
+            if (isDetrendedMode && canDetrend) {
+                badges = ` <span class="detrend-badge">종가/추세</span>`;
+            } else if (isLogMode) {
+                // 수정: 메인 로그 버튼 켜지면 보조지표도 모두 로그이므로 통일해서 배지 표시
+                badges = ` <span class="log-badge">LOG</span>`;
+            }
 
             if (alignedIndicators[id] && trappedDaysArray.length > 0) {
                 const dataToUse = (isDetrendedMode && canDetrend) ? alignedIndicators[id].detrended : alignedIndicators[id].raw;
@@ -510,6 +523,24 @@
             if (mainData.length > 0) updateChart();
         });
 
+        // 신규: 로그 토글 버튼 이벤트
+        const logBtn = document.getElementById('log-btn');
+        logBtn.addEventListener('click', () => {
+            isLogMode = !isLogMode;
+            if (isLogMode) {
+                logBtn.textContent = '로그: 활성화';
+                logBtn.classList.remove('off');
+            } else {
+                logBtn.textContent = '로그: 비활성화';
+                logBtn.classList.add('off');
+            }
+            
+            // 수정: 로그 버튼 누를 때 보조지표 라벨 배지([LOG])도 즉각 동기화
+            document.querySelectorAll('.indicator-cb').forEach(cb => updateIndicatorR2Label(cb));
+            
+            if (mainData.length > 0) updateChart();
+        });
+
         // 분리된 물림일수 체크박스 이벤트
         document.getElementById('trapped-cb').addEventListener('change', () => {
             if (mainData.length > 0) updateChart();
@@ -582,6 +613,7 @@
             if (chartInstance) chartInstance.destroy();
 
             const datasets = [];
+            const yAxisType = isLogMode ? 'logarithmic' : 'linear';
             const scales = {
                 x: {
                     type: 'time', time: { tooltipFormat: 'yyyy-MM-dd' },
@@ -590,41 +622,39 @@
                 }
             };
 
-            // 메인 주가/추세 데이터
             if (isDetrendedMode) {
                 datasets.push({ label: `${activeTicker} 종가/추세선`, data: detrendedData, borderColor: '#ffffff', borderWidth: 1.5, pointRadius: 0, yAxisID: 'y', spanGaps: true });
                 datasets.push({ label: '기준선 (1.0)', data: [{ x: mainData[0].x, y: 1 }, { x: mainData[mainData.length - 1].x, y: 1 }], borderColor: 'rgba(255, 255, 255, 0.4)', borderWidth: 1, borderDash: [2, 2], pointRadius: 0, yAxisID: 'y' });
-                scales.y = { type: 'linear', position: 'left', grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: '#aaa' } };
+                scales.y = { type: yAxisType, position: 'left', grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: '#aaa' } };
             } else {
-                datasets.push({ label: `${activeTicker} 종가 (로그)`, data: mainData, borderColor: '#ffffff', borderWidth: 1.5, pointRadius: 0, yAxisID: 'y', spanGaps: true });
+                datasets.push({ label: `${activeTicker} 종가${isLogMode ? ' (로그)' : ''}`, data: mainData, borderColor: '#ffffff', borderWidth: 1.5, pointRadius: 0, yAxisID: 'y', spanGaps: true });
                 datasets.push({ label: '지수 추세선', data: trendData, borderColor: '#ff5252', borderWidth: 1.5, borderDash: [4, 4], pointRadius: 0, yAxisID: 'y', spanGaps: true });
-                scales.y = { type: 'logarithmic', position: 'left', grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: '#aaa' } };
+                scales.y = { type: yAxisType, position: 'left', grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: '#aaa' } };
             }
 
-            // 물림일수(상단 체크박스) 차트 추가
             if (document.getElementById('trapped-cb').checked && cachedIndicators['TRAPPED_DAYS']) {
                 datasets.push({
                     label: '물림일수 [기준]',
                     data: cachedIndicators['TRAPPED_DAYS'], 
-                    borderColor: '#ff5252', // 눈에 띄게 빨간색으로 고정
+                    borderColor: '#ff5252', 
                     borderWidth: 1.5, pointRadius: 0, yAxisID: 'y_trapped', spanGaps: true
                 });
                 scales['y_trapped'] = { type: 'linear', position: 'right', display: false };
             }
 
-            // 일반 보조지표 추가
             let colorIndex = 0;
             document.querySelectorAll('.indicator-cb:checked').forEach(cb => {
                 const id = cb.value;
                 const baseName = cb.dataset.name;
-                const scaleParam = cb.dataset.scale;
                 const canDetrend = cb.dataset.detrend === 'true';
 
-                if (alignedIndicators[id]) {
+                if (alignedIndicators[id] && id !== 'TRAPPED_DAYS') {
                     const yAxisID = 'y_' + id;
                     let useDetrended = isDetrendedMode && canDetrend;
                     let plotData = useDetrended ? alignedIndicators[id].detrended : alignedIndicators[id].raw;
-                    let currentScale = (scaleParam === 'log' && !useDetrended) ? 'logarithmic' : 'linear';
+                    
+                    // 핵심 수정: 선형화(Detrend) ON/OFF 여부 상관없이, 무조건 메인 토글(isLogMode) 상태를 따르도록 단일화
+                    let currentScale = isLogMode ? 'logarithmic' : 'linear';
 
                     if (currentScale === 'logarithmic') {
                         plotData = plotData.map(d => ({ x: d.x, y: (d.y !== null && d.y > 0) ? d.y : null }));
