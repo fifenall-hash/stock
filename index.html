@@ -417,11 +417,13 @@
             }
 
             let badges = '';
+            // 1. 종가/추세 배지 (선형화 모드 && 적용 가능한 지표일 경우)
             if (isDetrendedMode && canDetrend) {
-                badges = ` <span class="detrend-badge">종가/추세</span>`;
-            } else if (isLogMode) {
-                // 수정: 메인 로그 버튼 켜지면 보조지표도 모두 로그이므로 통일해서 배지 표시
-                badges = ` <span class="log-badge">LOG</span>`;
+                badges += ` <span class="detrend-badge">종가/추세</span>`;
+            }
+            // 2. LOG 배지 (로그 모드가 켜져 있으면 앞의 배지 여부와 상관없이 무조건 추가)
+            if (isLogMode) {
+                badges += ` <span class="log-badge">LOG</span>`;
             }
 
             if (alignedIndicators[id] && trappedDaysArray.length > 0) {
