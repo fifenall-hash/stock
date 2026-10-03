@@ -57,15 +57,19 @@
         .r2-display { font-size: 14px; font-weight: bold; color: #ffeb3b; padding: 6px 10px; background-color: #333; border-radius: 4px; }
         .loading { font-size: 14px; color: #ffeb3b; display: none; margin-left: 10px; }
 
-        /* 분리된 물림일수 체크박스 */
+        /* 체크박스들 */
         .trapped-cb-label { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: bold; color: #ff5252; background: #2a2a2a; border: 1px solid #ff5252; padding: 5px 12px; border-radius: 4px; cursor: pointer; }
         .trapped-cb-label:hover { background: #331a1a; }
         .trapped-cb-label input { cursor: pointer; transform: scale(1.1); margin: 0; }
+        
+        .suha-cb-label { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: bold; color: #4caf50; background: #2a2a2a; border: 1px solid #4caf50; padding: 5px 12px; border-radius: 4px; cursor: pointer; }
+        .suha-cb-label:hover { background: #1e3322; }
+        .suha-cb-label input { cursor: pointer; transform: scale(1.1); margin: 0; }
 
         /* 최신 데이터 패널 */
         .latest-info { display: flex; gap: 15px; font-size: 14px; padding: 6px 12px; background-color: #2a2a2a; border-radius: 4px; border: 1px solid #444; margin-left: auto; flex-wrap: wrap; }
         .latest-info span { color: var(--accent); font-weight: bold; }
-        .latest-info .predicted-highlight { color: #ff5252; } /* 예상물림일수 강조색 */
+        .latest-info .predicted-highlight { color: #4caf50; } /* 예상수하일수 강조색 */
 
         .main-content { display: flex; gap: 20px; flex: 1; min-height: 0; }
         .chart-container { flex: 3; background-color: var(--panel-bg); border-radius: 8px; padding: 15px; position: relative; }
@@ -112,12 +116,11 @@
         <button id="reset-zoom-btn">줌 초기화</button>
         <span id="status-msg" class="loading">데이터 처리 중...</span>
 
-        <!-- 패널이 이쪽으로 올라왔습니다 -->
         <div id="latest-data-display" class="latest-info" style="display:none;">
             <div>최신 일자: <span id="latest-date">-</span></div>
             <div>종가: <span id="latest-close">-</span></div>
             <div>종가/추세: <span id="latest-detrend">-</span></div>
-            <div>예상물림일수: <span id="latest-predicted" class="predicted-highlight">-</span>일</div>
+            <div>예상수하일수: <span id="latest-predicted" class="predicted-highlight">-</span>일</div>
         </div>
     </div>
     
@@ -130,7 +133,14 @@
                 <input type="checkbox" id="trapped-cb"> 📈 물림일수 오버랩
             </label>
             
+            <!-- 신규: 수하일수 체크박스 -->
+            <label class="suha-cb-label" id="suha-cb-container" style="display:none;">
+                <input type="checkbox" id="suha-cb"> 📉 수하일수 오버랩
+            </label>
+            
             <button id="info-modal-btn" class="info-btn">물림일수란?</button>
+            <!-- 신규: 수하일수 정보 버튼 -->
+            <button id="suha-info-modal-btn" class="info-btn" style="border-color:#4caf50; color:#4caf50;">수하일수란?</button>
         </div>
     </div>
 
@@ -143,6 +153,7 @@
         </div>
     </div>
 
+    <!-- 기존 물림일수 모달 -->
     <div class="modal-overlay" id="info-modal">
         <div class="modal-content">
             <h3 style="margin-top:0; color:var(--accent);">💡 물림일수(Trapped Days)란?</h3>
@@ -155,6 +166,19 @@
                 전체 기간을 탐색하여 '가장 크게 발생한 물림일수'를 찾고, 최신 날짜로부터 역산하여 이 기간만큼은 잘라냅니다. 최근 구간은 아직 미래 데이터가 충분히 쌓이지 않아 물림일수가 기계적으로 작게 측정되므로 상관관계 및 선형회귀 계산에서 안전하게 제외시켰습니다.
             </p>
             <button class="modal-close-btn" id="close-modal-btn">닫기</button>
+        </div>
+    </div>
+    
+    <!-- 신규: 수하일수 모달 -->
+    <div class="modal-overlay" id="suha-info-modal">
+        <div class="modal-content" style="border-top-color: #4caf50;">
+            <h3 style="margin-top:0; color:#4caf50;">💡 수하일수(Suha Days)란?</h3>
+            <p style="line-height:1.6; font-size:14px; color:#ddd;">
+                어떤 시점의 종가보다 <strong>큰 값</strong>이 나타나기까지 걸린 거래일수를 의미합니다.<br><br>
+                예를 들어 2026-09-28의 종가가 20달러인데 2026-09-29 종가는 15달러이고 2026-09-30 종가는 25달러이면 20달러보다 큰 종가가 나타나기까지 2거래일이 걸렸으므로 2026-09-28의 수하일수는 2일이 됩니다.<br><br>
+                즉, 수하일수가 높을수록 전고점을 회복하는 데 오랜 시간이 걸렸다는 뜻으로, 회복 탄력성을 측정하거나 지루한 횡보 및 하락장의 길이를 파악하는 데 유용한 보조 지표입니다.
+            </p>
+            <button class="modal-close-btn" id="close-suha-modal-btn" style="background:#4caf50;">닫기</button>
         </div>
     </div>
 
@@ -171,9 +195,9 @@
                 { id: '^IRX', name: '13주 만기 국채 금리', scale: 'linear', detrend: false },
                 { id: '^VXN', name: '나스닥 변동성 지수', scale: 'linear', detrend: false },
                 { id: 'VIX_RATIO', name: 'VIX 백워데이션', scale: 'linear', detrend: false },
-                { id: 'MARKET_BREADTH', name: '시장 폭 (RSP/SPY)', scale: 'linear', detrend: false }, // ^ADD 대체 커스텀 지표
+                { id: 'MARKET_BREADTH', name: '시장 폭 (RSP/SPY)', scale: 'linear', detrend: false }, 
                 { id: 'BTC-USD', name: '비트코인', scale: 'log', detrend: true },
-                { id: 'GC=F', name: '금 선물', scale: 'log', detrend: true }      
+                { id: 'GC=F', name: '금 선물', scale: 'log', detrend: true }  
             ],
             'fred': [
                 { id: 'DGS2', name: '2년물 국채 금리', scale: 'linear', detrend: false },
@@ -185,7 +209,6 @@
             ]
         };
         
-        // 색상 복원: 첫 번째를 다시 초록(#00e676)으로
         const IND_COLORS = ['#00e676', '#29b6f6', '#ffea00', '#ff9100', '#f50057', '#d500f9', '#651fff', '#00b0ff', '#1de9b6'];
 
         let chartInstance = null;
@@ -194,6 +217,7 @@
         let detrendedData = [];  
         
         let trappedDaysArray = [];
+        let suhaDaysArray = []; // 신규: 수하일수 배열
         let validDataLength = 0; 
         
         let isDetrendedMode = true; 
@@ -206,6 +230,12 @@
         document.getElementById('info-modal-btn').addEventListener('click', () => infoModal.style.display = 'flex');
         document.getElementById('close-modal-btn').addEventListener('click', () => infoModal.style.display = 'none');
         infoModal.addEventListener('click', (e) => { if (e.target === infoModal) infoModal.style.display = 'none'; });
+
+        // 신규: 수하일수 모달 이벤트
+        const suhaInfoModal = document.getElementById('suha-info-modal');
+        document.getElementById('suha-info-modal-btn').addEventListener('click', () => suhaInfoModal.style.display = 'flex');
+        document.getElementById('close-suha-modal-btn').addEventListener('click', () => suhaInfoModal.style.display = 'none');
+        suhaInfoModal.addEventListener('click', (e) => { if (e.target === suhaInfoModal) suhaInfoModal.style.display = 'none'; });
 
         function toYYYYMMDD(ms) {
             const d = new Date(ms);
@@ -277,7 +307,6 @@
             return result;
         }
 
-        // 신규: VIX / VIX3M 비율을 직접 계산하는 함수
         async function fetchVixRatio() {
             const vixData = await fetchYahoo('^VIX');
             const vix3mData = await fetchYahoo('^VIX3M');
@@ -298,7 +327,6 @@
             return result;
         }
 
-        // 신규: 시장 폭의 괴리 (S&P 500 동일가중 ETF / 시가총액 ETF 비율)
         async function fetchMarketBreadth() {
             const rspData = await fetchYahoo('RSP');
             const spyData = await fetchYahoo('SPY');
@@ -312,7 +340,6 @@
                 if (mapSpy.has(dateStr)) {
                     let spyVal = mapSpy.get(dateStr);
                     if (spyVal !== 0 && spyVal !== null) {
-                        // 보기 편하게 100을 곱해 스케일을 조정
                         result.push({ x: d.x, y: (d.y / spyVal) * 100 });
                     }
                 }
@@ -352,6 +379,7 @@
             return { tData, dData };
         }
 
+        // 기존 물림일수 계산
         function calculateTrappedDays(data) {
             let n = data.length;
             let trapped = new Array(n).fill(0);
@@ -368,7 +396,26 @@
             return { trapped, maxTrappedDays, validLen };
         }
 
-        // r^2, 회귀 기울기(m), 절편(c)을 모두 반환하는 선형 회귀 함수
+        // 신규: 수하일수 계산
+        function calculateSuhaDays(data) {
+            let n = data.length;
+            let suha = new Array(n).fill(0);
+            for (let i = 0; i < n; i++) {
+                let currentClose = data[i].y;
+                let days = 0;
+                for (let j = i + 1; j < n; j++) {
+                    days++;
+                    if (data[j].y > currentClose) {
+                        break;
+                    }
+                }
+                suha[i] = days;
+            }
+            let maxSuhaDays = Math.max(...suha);
+            let validLen = Math.max(0, n - maxSuhaDays);
+            return { suha, maxSuhaDays, validLen };
+        }
+
         function calculateRegression(arrX, arrY, validLen) {
             if(validLen < 2) return { r2: 0, m: 0, c: 0 };
             let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
@@ -423,26 +470,31 @@
             trendR2Elem.innerHTML = `주가 ↔ 지수추세선 (r²: ${trendReg.r2.toFixed(4)})`;
 
             const detrendY = detrendedData.map(d => d.y);
-            const mainReg = calculateRegression(detrendY, trappedDaysArray, validDataLength);
+            
+            // 핵심 수정: r^2 타겟을 물림일수에서 수하일수로 변경 적용
+            const mainReg = calculateRegression(detrendY, suhaDaysArray, validDataLength);
             const mainR2Elem = document.getElementById('r2-main-display');
             mainR2Elem.style.display = 'block';
-            mainR2Elem.innerHTML = `종가/추세선 ↔ 물림일수 (r²: ${mainReg.r2.toFixed(4)})`;
+            mainR2Elem.innerHTML = `종가/추세선 ↔ 수하일수 (r²: ${mainReg.r2.toFixed(4)})`;
             
             document.getElementById('info-modal-btn').style.display = 'block';
-            document.getElementById('trapped-cb-container').style.display = 'flex'; // 물림일수 체크박스 표시
+            document.getElementById('suha-info-modal-btn').style.display = 'block';
+            
+            document.getElementById('trapped-cb-container').style.display = 'flex'; 
+            document.getElementById('suha-cb-container').style.display = 'flex'; 
 
             if (mainData.length > 0) {
                 const lastIdx = mainData.length - 1;
                 const latestDetrendVal = detrendedData[lastIdx].y;
                 
-                // 예상물림일수 산출 (Y = mX + c)
-                let predictedTrapped = Math.round(mainReg.m * latestDetrendVal + mainReg.c);
-                if (predictedTrapped < 0) predictedTrapped = 0; // 음수 방지
+                // 예상수하일수 산출 (Y = mX + c)
+                let predictedSuha = Math.round(mainReg.m * latestDetrendVal + mainReg.c);
+                if (predictedSuha < 0) predictedSuha = 0; 
 
                 document.getElementById('latest-date').textContent = toYYYYMMDD(mainData[lastIdx].x);
                 document.getElementById('latest-close').textContent = mainData[lastIdx].y.toFixed(2);
                 document.getElementById('latest-detrend').textContent = latestDetrendVal.toFixed(4);
-                document.getElementById('latest-predicted').textContent = predictedTrapped;
+                document.getElementById('latest-predicted').textContent = predictedSuha;
                 document.getElementById('latest-data-display').style.display = 'flex';
             }
         }
@@ -453,28 +505,21 @@
             const canDetrend = cb.dataset.detrend === 'true';
             const labelSpan = document.getElementById(`label-${id.replace(/\W/g, '')}`);
             
-            if (id === 'TRAPPED_DAYS') {
-                labelSpan.innerHTML = `${baseName} <span class="base-badge">기준 지표</span>`;
-                labelSpan.style.color = '#ffeb3b';
-                return;
-            }
-
             let badges = '';
-            // 1. 종가/추세 배지 (선형화 모드 && 적용 가능한 지표일 경우)
             if (isDetrendedMode && canDetrend) {
                 badges += ` <span class="detrend-badge">종가/추세</span>`;
             }
-            // 2. LOG 배지 (로그 모드가 켜져 있으면 앞의 배지 여부와 상관없이 무조건 추가)
             if (isLogMode) {
                 badges += ` <span class="log-badge">LOG</span>`;
             }
 
-            if (alignedIndicators[id] && trappedDaysArray.length > 0) {
+            // 핵심 수정: 보조지표의 r^2 측정치 타겟을 수하일수로 변경
+            if (alignedIndicators[id] && suhaDaysArray.length > 0) {
                 const dataToUse = (isDetrendedMode && canDetrend) ? alignedIndicators[id].detrended : alignedIndicators[id].raw;
                 const indY = dataToUse.map(d => d.y);
-                const reg = calculateRegression(indY, trappedDaysArray, validDataLength);
+                const reg = calculateRegression(indY, suhaDaysArray, validDataLength);
                 
-                labelSpan.innerHTML = `${baseName}${badges} (vs 물림일수 r²: ${reg.r2.toFixed(4)})`;
+                labelSpan.innerHTML = `${baseName}${badges} (vs 수하일수 r²: ${reg.r2.toFixed(4)})`;
                 labelSpan.style.color = '#ffeb3b';
             } else {
                 labelSpan.innerHTML = `${baseName}${badges}`;
@@ -499,18 +544,32 @@
                 
                 const trapCalc = calculateTrappedDays(mainData);
                 trappedDaysArray = trapCalc.trapped;
-                validDataLength = trapCalc.validLen;
 
-                // 자체 지표(물림일수) 캐싱 생성
+                // 신규: 수하일수 연산 및 기준 길이 덮어쓰기
+                const suhaCalc = calculateSuhaDays(mainData);
+                suhaDaysArray = suhaCalc.suha;
+                validDataLength = suhaCalc.validLen; 
+
+                // 자체 지표(물림일수, 수하일수) 캐싱 생성
                 let trappedDataObj = [];
+                let suhaDataObj = [];
                 for(let i=0; i<mainData.length; i++) {
-                    if (i < validDataLength) {
+                    // 물림일수
+                    if (i < trapCalc.validLen) {
                         trappedDataObj.push({ x: mainData[i].x, y: trappedDaysArray[i] });
                     } else {
                         trappedDataObj.push({ x: mainData[i].x, y: null });
                     }
+                    
+                    // 수하일수
+                    if (i < suhaCalc.validLen) {
+                        suhaDataObj.push({ x: mainData[i].x, y: suhaDaysArray[i] });
+                    } else {
+                        suhaDataObj.push({ x: mainData[i].x, y: null });
+                    }
                 }
-                cachedIndicators['TRAPPED_DAYS'] = trappedDataObj; // 물림일수는 별도로 정렬/선형화 필요 없음
+                cachedIndicators['TRAPPED_DAYS'] = trappedDataObj; 
+                cachedIndicators['SUHA_DAYS'] = suhaDataObj;
 
                 document.getElementById('cors-guide').style.display = 'none'; 
                 document.getElementById('reset-zoom-btn').style.display = 'inline-block';
@@ -530,7 +589,7 @@
                         if (id === 'VIX_RATIO') {
                             p = fetchVixRatio();
                         } else if (id === 'MARKET_BREADTH') {
-                            p = fetchMarketBreadth(); // 신규: 시장 폭 함수 연결
+                            p = fetchMarketBreadth();
                         } else {
                             p = (source === 'yahoo' ? fetchYahoo(id) : fetchFred(id));
                         }
@@ -576,7 +635,6 @@
             if (mainData.length > 0) updateChart();
         });
 
-        // 신규: 로그 토글 버튼 이벤트
         const logBtn = document.getElementById('log-btn');
         logBtn.addEventListener('click', () => {
             isLogMode = !isLogMode;
@@ -588,14 +646,17 @@
                 logBtn.classList.add('off');
             }
             
-            // 수정: 로그 버튼 누를 때 보조지표 라벨 배지([LOG])도 즉각 동기화
             document.querySelectorAll('.indicator-cb').forEach(cb => updateIndicatorR2Label(cb));
             
             if (mainData.length > 0) updateChart();
         });
 
-        // 분리된 물림일수 체크박스 이벤트
         document.getElementById('trapped-cb').addEventListener('change', () => {
+            if (mainData.length > 0) updateChart();
+        });
+        
+        // 신규: 수하일수 체크박스 이벤트
+        document.getElementById('suha-cb').addEventListener('change', () => {
             if (mainData.length > 0) updateChart();
         });
 
@@ -618,7 +679,7 @@
                     if (id === 'VIX_RATIO') {
                         rawData = await fetchVixRatio(); 
                     } else if (id === 'MARKET_BREADTH') {
-                        rawData = await fetchMarketBreadth(); // 신규: 시장 폭 함수 연결
+                        rawData = await fetchMarketBreadth();
                     } else {
                         rawData = source === 'yahoo' ? fetchYahoo(id) : fetchFred(id);
                     }
@@ -702,6 +763,16 @@
                 });
                 scales['y_trapped'] = { type: 'linear', position: 'right', display: false };
             }
+            
+            if (document.getElementById('suha-cb').checked && cachedIndicators['SUHA_DAYS']) {
+                datasets.push({
+                    label: '수하일수 [기준]',
+                    data: cachedIndicators['SUHA_DAYS'], 
+                    borderColor: '#4caf50', 
+                    borderWidth: 1.5, pointRadius: 0, yAxisID: 'y_suha', spanGaps: true
+                });
+                scales['y_suha'] = { type: 'linear', position: 'right', display: false };
+            }
 
             let colorIndex = 0;
             document.querySelectorAll('.indicator-cb:checked').forEach(cb => {
@@ -709,12 +780,11 @@
                 const baseName = cb.dataset.name;
                 const canDetrend = cb.dataset.detrend === 'true';
 
-                if (alignedIndicators[id] && id !== 'TRAPPED_DAYS') {
+                if (alignedIndicators[id] && id !== 'TRAPPED_DAYS' && id !== 'SUHA_DAYS') {
                     const yAxisID = 'y_' + id;
                     let useDetrended = isDetrendedMode && canDetrend;
                     let plotData = useDetrended ? alignedIndicators[id].detrended : alignedIndicators[id].raw;
                     
-                    // 핵심 수정: 선형화(Detrend) ON/OFF 여부 상관없이, 무조건 메인 토글(isLogMode) 상태를 따르도록 단일화
                     let currentScale = isLogMode ? 'logarithmic' : 'linear';
 
                     if (currentScale === 'logarithmic') {
