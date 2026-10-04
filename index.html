@@ -64,10 +64,6 @@
         .trapped-cb-label:hover { background: #331a1a; }
         .trapped-cb-label input { cursor: pointer; transform: scale(1.1); margin: 0; }
 
-        .t10y2y-cb-label { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: bold; color: #00e5ff; background: #2a2a2a; border: 1px solid #00e5ff; padding: 5px 12px; border-radius: 4px; cursor: pointer; }
-        .t10y2y-cb-label:hover { background: #1a3333; }
-        .t10y2y-cb-label input { cursor: pointer; transform: scale(1.1); margin: 0; }
-
         .latest-info { display: flex; gap: 15px; font-size: 14px; padding: 6px 12px; background-color: #2a2a2a; border-radius: 4px; border: 1px solid #444; margin-left: auto; flex-wrap: wrap; }
         .latest-info span { color: var(--accent); font-weight: bold; }
         .latest-info .predicted-highlight { color: #ff5252; }
@@ -82,11 +78,17 @@
         
         .checkbox-label { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; cursor: pointer; color: #ddd; font-size: 13.5px; background: #2a2a2a; padding: 7px 10px; border-radius: 4px; transition: background 0.2s; }
         .checkbox-label:hover { background: #333; }
-        .checkbox-main-group { display: flex; align-items: center; gap: 8px; width: 100%; }
-        input[type="checkbox"] { cursor: pointer; transform: scale(1.1); margin-right: 2px; }
         
         .ind-text { display: inline-block; word-break: keep-all; }
         .err-text { color: #ff5252; font-size: 12px; margin-left: 5px; }
+        
+        /* 개별 보조지표 LOG 토글 버튼 스타일 */
+        .ind-log-toggle {
+            font-size: 10px; font-weight: bold; padding: 3px 6px;
+            border: 1px solid #555; background: transparent; color: #777;
+            border-radius: 3px; cursor: pointer; transition: all 0.2s;
+        }
+        .ind-log-toggle.active { background: #7e57c2; color: #fff; border-color: #7e57c2; }
         
         .log-badge, .detrend-badge { font-size: 9px; font-weight: bold; color: white; padding: 2px 4px; border-radius: 3px; margin-left: 4px; vertical-align: text-top; }
         .log-badge { background-color: #7e57c2; }
@@ -113,8 +115,8 @@
     <div class="top-controls">
         <input type="text" id="ticker-input" placeholder="티커 입력 (예: TQQQ)" value="TQQQ">
         <button id="search-btn">차트 검색</button>
-        <button id="toggle-btn">추세선 기반 선형화: ON</button>
-        <button id="log-btn">로그: 활성화</button>
+        <button id="toggle-btn">추세선 기반 수평화: ON</button>
+        <button id="log-btn">메인차트 로그: 활성화</button>
         <button id="reset-zoom-btn">줌 초기화</button>
         <button id="csv-btn">CSV 다운로드</button>
         <span id="status-msg" class="loading">데이터 처리 중...</span>
@@ -136,10 +138,6 @@
                     
                     <label class="trapped-cb-label" id="trapped-cb-container" style="display:none;">
                         <input type="checkbox" id="trapped-cb"> 📈 물림일수 오버랩
-                    </label>
-                    
-                    <label class="t10y2y-cb-label" id="t10y2y-cb-container" style="display:none;">
-                        <input type="checkbox" id="t10y2y-cb"> 📉 장단기 금리차
                     </label>
 
                     <button id="info-modal-btn" class="info-btn">물림일수란?</button>
@@ -193,7 +191,7 @@
                 { id: 'DGS2', name: '2년물 국채 금리', scale: 'linear', detrend: false },
                 { id: 'SAHMREALTIME', name: '샴의 법칙', scale: 'linear', detrend: false }, 
                 { id: 'DFII10', name: '미국 10년물 실질 금리', scale: 'linear', detrend: false }, 
-                { id: 'BAMLH0A0HYM2', name: '하이일드 스프레드', scale: 'linear', detrend: false }, 
+                { id: 'T10Y2Y', name: '장단기 금리차', scale: 'linear', detrend: false }, // 독립 패널에서 복귀
                 { id: 'WALCL', name: '연준 총자산 규모', scale: 'log', detrend: true }, 
                 { id: 'M2SL', name: 'M2 통화량', scale: 'log', detrend: true }          
             ]
@@ -214,7 +212,8 @@
         
         let isDetrendedMode = true; 
         let cachedIndicators = {}; 
-        let isLogMode = true;
+        let isMainLogMode = true; // 메인 차트 전용 로그 스위치
+        let indLogStates = {}; // 개별 보조지표 로그 스위치 상태 관리
         let alignedIndicators = {}; 
         let activeTicker = "";
 
@@ -238,15 +237,41 @@
                 group.innerHTML = `<h3>${source === 'yahoo' ? '야후 파이낸스' : '미연준 (FRED)'}</h3>`;
                 
                 INDICATORS[source].forEach(ind => {
+                    indLogStates[ind.id] = (ind.scale === 'log'); // 기본값 설정
+                    const logBtnClass = indLogStates[ind.id] ? 'ind-log-toggle active' : 'ind-log-toggle';
+
                     const label = document.createElement('label');
                     label.className = 'checkbox-label';
                     label.innerHTML = `
-                        <div class="checkbox-main-group">
-                            <input type="checkbox" class="indicator-cb" value="${ind.id}" data-source="${source}" data-name="${ind.name}" data-scale="${ind.scale}" data-detrend="${ind.detrend}"> 
-                            <span class="ind-text" id="label-${ind.id.replace(/\W/g, '')}">${ind.name}</span>
+                        <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
+                            <div style="display:flex; align-items:center; gap:6px;">
+                                <input type="checkbox" class="indicator-cb" value="${ind.id}" data-source="${source}" data-name="${ind.name}" data-scale="${ind.scale}" data-detrend="${ind.detrend}"> 
+                                <span class="ind-text" id="label-${ind.id.replace(/\W/g, '')}">${ind.name}</span>
+                            </div>
+                            <button type="button" class="${logBtnClass}" data-id="${ind.id}">LOG</button>
                         </div>
                     `;
+                    
                     label.querySelector('.indicator-cb').addEventListener('change', handleIndicatorToggle);
+                    
+                    // 개별 보조지표 LOG 버튼 이벤트
+                    label.querySelector('.ind-log-toggle').addEventListener('click', (e) => {
+                        e.preventDefault(); // 체크박스 클릭 방지
+                        e.stopPropagation();
+                        
+                        const btn = e.target;
+                        const id = btn.dataset.id;
+                        indLogStates[id] = !indLogStates[id]; // 상태 반전
+                        
+                        if (indLogStates[id]) btn.classList.add('active');
+                        else btn.classList.remove('active');
+                        
+                        const cb = document.querySelector(`.indicator-cb[value="${id}"]`);
+                        if (cb) updateIndicatorR2Label(cb);
+                        
+                        if (mainData.length > 0) updateChart();
+                    });
+
                     group.appendChild(label);
                 });
                 panel.appendChild(group);
@@ -459,7 +484,6 @@
             
             document.getElementById('info-modal-btn').style.display = 'block';
             document.getElementById('trapped-cb-container').style.display = 'flex';
-            document.getElementById('t10y2y-cb-container').style.display = 'flex';
 
             if (mainData.length > 0) {
                 const lastIdx = mainData.length - 1;
@@ -487,12 +511,8 @@
             let badges = '';
             if (isDetrendedMode && canDetrend) badges += ` <span class="detrend-badge">종가/추세</span>`;
             
-            let isNegative = false;
-            if (alignedIndicators[id] && alignedIndicators[id].raw) {
-                isNegative = alignedIndicators[id].raw.some(d => d.y !== null && d.y <= 0);
-            }
-
-            if (isLogMode && !isNegative) badges += ` <span class="log-badge">LOG</span>`;
+            // 전역 isLogMode가 아닌 각 지표의 개별 indLogStates 값을 읽어 배지 부착
+            if (indLogStates[id]) badges += ` <span class="log-badge">LOG</span>`;
 
             if (alignedIndicators[id] && trappedDaysArray.length > 0) {
                 const dataToUse = (isDetrendedMode && canDetrend) ? alignedIndicators[id].detrended : alignedIndicators[id].raw;
@@ -538,10 +558,6 @@
                 const underwaterCalc = calculateUnderwaterDays(mainData);
                 underwaterDaysArray = underwaterCalc.underwater;
                 validUnderwaterLength = underwaterCalc.validLen;
-
-                if (cachedIndicators['T10Y2Y']) {
-                    alignedIndicators['T10Y2Y'] = alignIndicatorData(cachedIndicators['T10Y2Y']);
-                }
 
                 document.getElementById('cors-guide').style.display = 'none'; 
                 document.getElementById('reset-zoom-btn').style.display = 'inline-block';
@@ -593,14 +609,10 @@
             document.querySelectorAll('.indicator-cb:checked').forEach(cb => {
                 activeInds.push({ id: cb.value, name: cb.dataset.name });
             });
-            if (document.getElementById('t10y2y-cb').checked) {
-                activeInds.push({ id: 'T10Y2Y', name: '장단기 금리차' });
-            }
             if (document.getElementById('trapped-cb').checked) {
                 activeInds.push({ id: 'TRAPPED_DAYS', name: '물림일수' });
             }
 
-            // 한글 헤더 적용
             let csvContent = "날짜,종가,수하일수";
             activeInds.forEach(ind => { csvContent += `,${ind.name}`; });
             csvContent += "\n";
@@ -619,6 +631,7 @@
                         let obj = cachedIndicators['TRAPPED_DAYS'][i];
                         val = (obj && obj.y !== null) ? obj.y : "";
                     } else if (alignedIndicators[ind.id] && alignedIndicators[ind.id].raw[i]) {
+                        // 원본 데이터 그대로 CSV에 반영 (0.0001 치환 전)
                         let y = alignedIndicators[ind.id].raw[i].y;
                         val = (y !== null && y !== undefined) ? y.toFixed(4) : "";
                     }
@@ -642,10 +655,10 @@
         toggleBtn.addEventListener('click', () => {
             isDetrendedMode = !isDetrendedMode;
             if (isDetrendedMode) {
-                toggleBtn.textContent = '추세선 기반 선형화: ON';
+                toggleBtn.textContent = '추세선 기반 수평화: ON';
                 toggleBtn.classList.remove('off');
             } else {
-                toggleBtn.textContent = '추세선 기반 선형화: OFF';
+                toggleBtn.textContent = '추세선 기반 수평화: OFF';
                 toggleBtn.classList.add('off');
             }
             document.querySelectorAll('.indicator-cb').forEach(cb => updateIndicatorR2Label(cb));
@@ -654,44 +667,19 @@
 
         const logBtn = document.getElementById('log-btn');
         logBtn.addEventListener('click', () => {
-            isLogMode = !isLogMode;
-            if (isLogMode) {
-                logBtn.textContent = '로그: 활성화';
+            isMainLogMode = !isMainLogMode;
+            if (isMainLogMode) {
+                logBtn.textContent = '메인차트 로그: 활성화';
                 logBtn.classList.remove('off');
             } else {
-                logBtn.textContent = '로그: 비활성화';
+                logBtn.textContent = '메인차트 로그: 비활성화';
                 logBtn.classList.add('off');
             }
-            document.querySelectorAll('.indicator-cb').forEach(cb => updateIndicatorR2Label(cb));
+            // 메인차트 로그 버튼은 메인 차트만 관여하므로 보조지표 라벨 업데이트 미수행
             if (mainData.length > 0) updateChart();
         });
 
         document.getElementById('trapped-cb').addEventListener('change', () => {
-            if (mainData.length > 0) updateChart();
-        });
-
-        document.getElementById('t10y2y-cb').addEventListener('change', async (e) => {
-            const cb = e.target;
-            const id = 'T10Y2Y';
-            if (cb.checked && !cachedIndicators[id]) {
-                cb.disabled = true;
-                const status = document.getElementById('status-msg');
-                status.textContent = "장단기 금리차 로딩 중...";
-                status.style.display = 'inline';
-                try {
-                    const data = await fetchFred(id);
-                    cachedIndicators[id] = data;
-                    if (mainData.length > 0) {
-                        alignedIndicators[id] = alignIndicatorData(data);
-                    }
-                } catch(err) {
-                    alert('장단기 금리차 데이터를 가져오지 못했습니다.');
-                    cb.checked = false;
-                } finally {
-                    cb.disabled = false;
-                    status.style.display = 'none';
-                }
-            }
             if (mainData.length > 0) updateChart();
         });
 
@@ -758,7 +746,18 @@
         function updateChart() {
             if (chartInstance) chartInstance.destroy();
             const datasets = [];
-            const yAxisType = isLogMode ? 'logarithmic' : 'linear';
+            
+            // 메인 차트 데이터 로그 설정
+            const yAxisType = isMainLogMode ? 'logarithmic' : 'linear';
+            let chartMainData = mainData;
+            let chartDetrendedData = detrendedData;
+            
+            // 메인 차트도 로그일 경우 만약을 위해 0.0001 치환 적용
+            if (yAxisType === 'logarithmic') {
+                chartMainData = chartMainData.map(d => ({ x: d.x, y: (d.y !== null && d.y <= 0) ? 0.0001 : d.y }));
+                chartDetrendedData = chartDetrendedData.map(d => ({ x: d.x, y: (d.y !== null && d.y <= 0) ? 0.0001 : d.y }));
+            }
+
             const scales = {
                 x: {
                     type: 'time', time: { tooltipFormat: 'yyyy-MM-dd' },
@@ -768,11 +767,11 @@
             };
 
             if (isDetrendedMode) {
-                datasets.push({ label: `${activeTicker} 종가/추세선`, data: detrendedData, borderColor: '#ffffff', borderWidth: 1.5, pointRadius: 0, yAxisID: 'y', spanGaps: true });
+                datasets.push({ label: `${activeTicker} 종가/추세선`, data: chartDetrendedData, borderColor: '#ffffff', borderWidth: 1.5, pointRadius: 0, yAxisID: 'y', spanGaps: true });
                 datasets.push({ label: '기준선 (1.0)', data: [{ x: mainData[0].x, y: 1 }, { x: mainData[mainData.length - 1].x, y: 1 }], borderColor: 'rgba(255, 255, 255, 0.4)', borderWidth: 1, borderDash: [2, 2], pointRadius: 0, yAxisID: 'y' });
                 scales.y = { type: yAxisType, position: 'left', grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: '#aaa' } };
             } else {
-                datasets.push({ label: `${activeTicker} 종가${isLogMode ? ' (로그)' : ''}`, data: mainData, borderColor: '#ffffff', borderWidth: 1.5, pointRadius: 0, yAxisID: 'y', spanGaps: true });
+                datasets.push({ label: `${activeTicker} 종가${isMainLogMode ? ' (로그)' : ''}`, data: chartMainData, borderColor: '#ffffff', borderWidth: 1.5, pointRadius: 0, yAxisID: 'y', spanGaps: true });
                 datasets.push({ label: '지수 추세선', data: trendData, borderColor: '#ff5252', borderWidth: 1.5, borderDash: [4, 4], pointRadius: 0, yAxisID: 'y', spanGaps: true });
                 scales.y = { type: yAxisType, position: 'left', grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: '#aaa' } };
             }
@@ -787,34 +786,23 @@
                 scales['y_trapped'] = { type: 'linear', position: 'right', display: false };
             }
 
-            if (document.getElementById('t10y2y-cb').checked && cachedIndicators['T10Y2Y']) {
-                const yAxisID = 'y_T10Y2Y';
-                let plotData = alignedIndicators['T10Y2Y'].raw; 
-                datasets.push({
-                    label: '장단기 금리차',
-                    data: plotData,
-                    borderColor: '#00e5ff', 
-                    borderWidth: 1.5, pointRadius: 0, yAxisID: yAxisID, spanGaps: true
-                });
-                scales[yAxisID] = { type: 'linear', position: 'right', display: false };
-            }
-
             let colorIndex = 0;
             document.querySelectorAll('.indicator-cb:checked').forEach(cb => {
                 const id = cb.value;
                 const baseName = cb.dataset.name;
                 const canDetrend = cb.dataset.detrend === 'true';
 
-                if (alignedIndicators[id] && id !== 'TRAPPED_DAYS' && id !== 'T10Y2Y') {
+                if (alignedIndicators[id] && id !== 'TRAPPED_DAYS') {
                     const yAxisID = 'y_' + id;
                     let useDetrended = isDetrendedMode && canDetrend;
                     let plotData = useDetrended ? alignedIndicators[id].detrended : alignedIndicators[id].raw;
                     
-                    let isNegative = alignedIndicators[id].raw.some(d => d.y !== null && d.y <= 0);
-                    let currentScale = (isLogMode && !isNegative) ? 'logarithmic' : 'linear';
+                    // 각 지표에 부여된 개별 로그 스위치 값(indLogStates[id])을 호출
+                    let currentScale = indLogStates[id] ? 'logarithmic' : 'linear';
 
+                    // 0보다 작거나 같은 값들은 로그 적용 대신 0.0001로 강제 반환 (차트 랜더링용)
                     if (currentScale === 'logarithmic') {
-                        plotData = plotData.map(d => ({ x: d.x, y: (d.y !== null && d.y > 0) ? d.y : null }));
+                        plotData = plotData.map(d => ({ x: d.x, y: (d.y !== null && d.y <= 0) ? 0.0001 : d.y }));
                     }
 
                     datasets.push({
