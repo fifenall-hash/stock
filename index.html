@@ -34,8 +34,9 @@
         .guide-banner a { color: var(--accent); text-decoration: none; }
         .guide-banner a:hover { text-decoration: underline; }
         
-        .top-controls { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; flex-wrap: wrap; }
-        .top-metrics-container { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; } /* 간격 살짝 조정 */
+        .top-controls { display: flex; gap: 10px; margin-bottom: 15px; align-items: center; flex-wrap: wrap; }
+        
+        .top-metrics-container { display: flex; flex-direction: column; gap: 10px; }
         .top-metrics { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
         
         input[type="text"] { padding: 8px 12px; font-size: 15px; border: 1px solid #333; border-radius: 4px; background-color: #2a2a2a; color: white; outline: none; }
@@ -50,6 +51,8 @@
         #log-btn.off { background-color: #555; color: #ccc; }
         #reset-zoom-btn { background-color: #757575; color: white; display: none; }
         #reset-zoom-btn:hover { background-color: #999; }
+        #csv-btn { background-color: #ff9800; color: white; display: none; }
+        #csv-btn:hover { background-color: #fb8c00; }
         
         .info-btn { background-color: transparent; border: 1px solid #ffeb3b; color: #ffeb3b; display: none; }
         .info-btn:hover { background-color: #ffeb3b; color: #121212; }
@@ -57,24 +60,23 @@
         .r2-display { font-size: 14px; font-weight: bold; color: #ffeb3b; padding: 6px 10px; background-color: #333; border-radius: 4px; }
         .loading { font-size: 14px; color: #ffeb3b; display: none; margin-left: 10px; }
 
-        /* 분리된 물림일수 체크박스 */
         .trapped-cb-label { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: bold; color: #ff5252; background: #2a2a2a; border: 1px solid #ff5252; padding: 5px 12px; border-radius: 4px; cursor: pointer; }
         .trapped-cb-label:hover { background: #331a1a; }
         .trapped-cb-label input { cursor: pointer; transform: scale(1.1); margin: 0; }
 
-        /* 최신 데이터 패널 */
+        .t10y2y-cb-label { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: bold; color: #00e5ff; background: #2a2a2a; border: 1px solid #00e5ff; padding: 5px 12px; border-radius: 4px; cursor: pointer; }
+        .t10y2y-cb-label:hover { background: #1a3333; }
+        .t10y2y-cb-label input { cursor: pointer; transform: scale(1.1); margin: 0; }
+
         .latest-info { display: flex; gap: 15px; font-size: 14px; padding: 6px 12px; background-color: #2a2a2a; border-radius: 4px; border: 1px solid #444; margin-left: auto; flex-wrap: wrap; }
         .latest-info span { color: var(--accent); font-weight: bold; }
-        .latest-info .predicted-highlight { color: #ff5252; } /* 예상물림일수 강조색 */
+        .latest-info .predicted-highlight { color: #ff5252; }
 
         .main-content { display: flex; gap: 20px; flex: 1; min-height: 0; }
-        
-        /* 새로 추가된 좌측 래퍼 (차트 + 상단 통계지표) */
-        .left-section { flex: 3; display: flex; flex-direction: column; min-height: 0; }
-        
+        .chart-section { flex: 3; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
         .chart-container { flex: 1; background-color: var(--panel-bg); border-radius: 8px; padding: 15px; position: relative; min-height: 0; }
-        .indicator-container { flex: 1; background-color: var(--panel-bg); border-radius: 8px; padding: 12px 15px; overflow-y: auto; }
         
+        .indicator-container { flex: 1; background-color: var(--panel-bg); border-radius: 8px; padding: 12px 15px; overflow-y: auto; }
         .indicator-group { margin-bottom: 12px; }
         .indicator-group h3 { margin-top: 0; font-size: 15px; color: var(--accent); border-bottom: 1px solid #333; padding-bottom: 6px; margin-bottom: 8px; }
         
@@ -114,6 +116,7 @@
         <button id="toggle-btn">추세선 기반 선형화: ON</button>
         <button id="log-btn">로그: 활성화</button>
         <button id="reset-zoom-btn">줌 초기화</button>
+        <button id="csv-btn">CSV 다운로드</button>
         <span id="status-msg" class="loading">데이터 처리 중...</span>
 
         <div id="latest-data-display" class="latest-info" style="display:none;">
@@ -124,9 +127,8 @@
         </div>
     </div>
     
-    <!-- 통계 구역과 차트 구역을 left-section으로 함께 묶었습니다 -->
     <div class="main-content">
-        <div class="left-section">
+        <div class="chart-section">
             <div class="top-metrics-container">
                 <div class="top-metrics">
                     <div id="r2-trend-display" class="r2-display" style="display:none;"></div>
@@ -136,16 +138,19 @@
                         <input type="checkbox" id="trapped-cb"> 📈 물림일수 오버랩
                     </label>
                     
+                    <label class="t10y2y-cb-label" id="t10y2y-cb-container" style="display:none;">
+                        <input type="checkbox" id="t10y2y-cb"> 📉 장단기 금리차
+                    </label>
+
                     <button id="info-modal-btn" class="info-btn">물림일수란?</button>
                 </div>
             </div>
-            
+
             <div class="chart-container">
                 <canvas id="mainChart"></canvas>
             </div>
         </div>
-        
-        <!-- 우측 보조지표 패널이 상단 빈 공간 위로 올라오게 됩니다 -->
+
         <div class="indicator-container" id="indicator-panel">
             <!-- 자바스크립트로 체크박스 목록 자동 생성 -->
         </div>
@@ -179,17 +184,16 @@
                 { id: '^IRX', name: '13주 만기 국채 금리', scale: 'linear', detrend: false },
                 { id: '^VXN', name: '나스닥 변동성 지수', scale: 'linear', detrend: false },
                 { id: 'VIX_RATIO', name: 'VIX 백워데이션', scale: 'linear', detrend: false },
-                { id: 'MARKET_BREADTH', name: '시장 폭 (RSP/SPY)', scale: 'linear', detrend: false },
+                { id: 'MARKET_BREADTH', name: '시장 폭 (RSP/SPY)', scale: 'linear', detrend: false }, 
                 { id: 'BTC-USD', name: '비트코인', scale: 'log', detrend: true },
-                { id: 'GC=F', name: '금 선물', scale: 'log', detrend: true }    
+                { id: 'GC=F', name: '금 선물', scale: 'log', detrend: true }   
             ],
             'fred': [
                 { id: 'DGS2', name: '2년물 국채 금리', scale: 'linear', detrend: false },
                 { id: 'SAHMREALTIME', name: '샴의 법칙', scale: 'linear', detrend: false }, 
                 { id: 'DFII10', name: '미국 10년물 실질 금리', scale: 'linear', detrend: false }, 
-                { id: 'T10Y2Y', name: '장단기 금리차', scale: 'linear', detrend: false },          
                 { id: 'WALCL', name: '연준 총자산 규모', scale: 'log', detrend: true }, 
-                { id: 'M2SL', name: 'M2 통화량', scale: 'log', detrend: true }         
+                { id: 'M2SL', name: 'M2 통화량', scale: 'log', detrend: true }          
             ]
         };
         
@@ -202,6 +206,10 @@
         
         let trappedDaysArray = [];
         let validDataLength = 0; 
+
+        // 신규: 수하일수 관련 전역 변수
+        let underwaterDaysArray = [];
+        let validUnderwaterLength = 0; 
         
         let isDetrendedMode = true; 
         let cachedIndicators = {}; 
@@ -287,18 +295,14 @@
         async function fetchVixRatio() {
             const vixData = await fetchYahoo('^VIX');
             const vix3mData = await fetchYahoo('^VIX3M');
-
             let mapVix3m = new Map();
             for (let d of vix3mData) mapVix3m.set(toYYYYMMDD(d.x), d.y);
-
             let result = [];
             for (let d of vixData) {
                 let dateStr = toYYYYMMDD(d.x);
                 if (mapVix3m.has(dateStr)) {
                     let val3m = mapVix3m.get(dateStr);
-                    if (val3m !== 0 && val3m !== null) {
-                        result.push({ x: d.x, y: d.y / val3m });
-                    }
+                    if (val3m !== 0 && val3m !== null) result.push({ x: d.x, y: d.y / val3m });
                 }
             }
             return result;
@@ -307,18 +311,14 @@
         async function fetchMarketBreadth() {
             const rspData = await fetchYahoo('RSP');
             const spyData = await fetchYahoo('SPY');
-
             let mapSpy = new Map();
             for (let d of spyData) mapSpy.set(toYYYYMMDD(d.x), d.y);
-
             let result = [];
             for (let d of rspData) {
                 let dateStr = toYYYYMMDD(d.x);
                 if (mapSpy.has(dateStr)) {
                     let spyVal = mapSpy.get(dateStr);
-                    if (spyVal !== 0 && spyVal !== null) {
-                        result.push({ x: d.x, y: (d.y / spyVal) * 100 });
-                    }
+                    if (spyVal !== 0 && spyVal !== null) result.push({ x: d.x, y: (d.y / spyVal) * 100 });
                 }
             }
             return result;
@@ -372,41 +372,71 @@
             return { trapped, maxTrappedDays, validLen };
         }
 
+        // 수하일수 로직 고도화 및 제외 구간 반환
+        function calculateUnderwaterDays(data) {
+            let n = data.length;
+            let underwater = new Array(n).fill(0);
+            let maxUnderwaterDays = 0;
+
+            for (let i = 0; i < n; i++) {
+                let currentClose = data[i].y;
+                let recovered = false;
+                
+                for (let j = i + 1; j < n; j++) {
+                    if (data[j].y > currentClose) {
+                        underwater[i] = j - i;
+                        if (underwater[i] > maxUnderwaterDays) {
+                            maxUnderwaterDays = underwater[i];
+                        }
+                        recovered = true;
+                        break;
+                    }
+                }
+                
+                // 회복하지 못한 진행형 구간인 경우
+                if (!recovered) {
+                    // 최소 보장된 수하일수(현재 배열 기준 마지막 인덱스를 넘어선 어딘가)
+                    let minPossibleUnderwater = n - i; 
+                    if (minPossibleUnderwater > maxUnderwaterDays) {
+                        maxUnderwaterDays = minPossibleUnderwater;
+                    }
+                    underwater[i] = n - 1 - i; // 단순히 경과일수 저장(어차피 CSV에선 안전 구간 필터링 됨)
+                }
+            }
+            
+            // 안전 구간 커트라인 (최대 수하일수만큼 최신 데이터 제외)
+            let validLen = Math.max(0, n - maxUnderwaterDays);
+            
+            return { underwater, maxUnderwaterDays, validLen };
+        }
+
         function calculateRegression(arrX, arrY, validLen) {
             if(validLen < 2) return { r2: 0, m: 0, c: 0 };
             let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
             let count = 0;
-            
             for(let i = 0; i < validLen; i++) {
                 if(arrX[i] === null || arrY[i] === null || isNaN(arrX[i]) || isNaN(arrY[i])) continue;
                 let x = arrX[i]; let y = arrY[i];
                 sumX += x; sumY += y; sumXY += x * y; sumX2 += x * x; sumY2 += y * y; count++;
             }
-            
             if(count < 2) return { r2: 0, m: 0, c: 0 };
-            
             let num = (count * sumXY) - (sumX * sumY);
             let den = Math.sqrt((count * sumX2 - sumX*sumX) * (count * sumY2 - sumY*sumY));
             let r2 = den === 0 ? 0 : (num / den) * (num / den);
-            
             let denM = (count * sumX2) - (sumX * sumX);
             let m = denM === 0 ? 0 : ((count * sumXY) - (sumX * sumY)) / denM;
             let c = (sumY - m * sumX) / count;
-            
             return { r2, m, c };
         }
 
         function alignIndicatorData(indData) {
             let mapRaw = new Map();
             for (let d of indData) mapRaw.set(toYYYYMMDD(d.x), d.y);
-            
             let calc = calculateTrend(indData);
             let mapDetrend = new Map();
             for (let d of calc.dData) mapDetrend.set(toYYYYMMDD(d.x), d.y);
-
             let alignedRaw = []; let alignedDetrended = [];
             let lastRaw = null; let lastDetrend = null;
-
             for (let d of mainData) {
                 let dateStr = toYYYYMMDD(d.x);
                 if (mapRaw.has(dateStr)) lastRaw = mapRaw.get(dateStr);
@@ -433,13 +463,14 @@
             
             document.getElementById('info-modal-btn').style.display = 'block';
             document.getElementById('trapped-cb-container').style.display = 'flex';
+            document.getElementById('t10y2y-cb-container').style.display = 'flex';
 
             if (mainData.length > 0) {
                 const lastIdx = mainData.length - 1;
                 const latestDetrendVal = detrendedData[lastIdx].y;
                 
                 let predictedTrapped = Math.round(mainReg.m * latestDetrendVal + mainReg.c);
-                if (predictedTrapped < 0) predictedTrapped = 0;
+                if (predictedTrapped < 0) predictedTrapped = 0; 
 
                 document.getElementById('latest-date').textContent = toYYYYMMDD(mainData[lastIdx].x);
                 document.getElementById('latest-close').textContent = mainData[lastIdx].y.toFixed(2);
@@ -455,25 +486,16 @@
             const canDetrend = cb.dataset.detrend === 'true';
             const labelSpan = document.getElementById(`label-${id.replace(/\W/g, '')}`);
             
-            if (id === 'TRAPPED_DAYS') {
-                labelSpan.innerHTML = `${baseName} <span class="base-badge">기준 지표</span>`;
-                labelSpan.style.color = '#ffeb3b';
-                return;
-            }
+            if (id === 'TRAPPED_DAYS' || !labelSpan) return;
 
             let badges = '';
-            if (isDetrendedMode && canDetrend) {
-                badges += ` <span class="detrend-badge">종가/추세</span>`;
-            }
-            if (isLogMode) {
-                badges += ` <span class="log-badge">LOG</span>`;
-            }
+            if (isDetrendedMode && canDetrend) badges += ` <span class="detrend-badge">종가/추세</span>`;
+            if (isLogMode) badges += ` <span class="log-badge">LOG</span>`;
 
             if (alignedIndicators[id] && trappedDaysArray.length > 0) {
                 const dataToUse = (isDetrendedMode && canDetrend) ? alignedIndicators[id].detrended : alignedIndicators[id].raw;
                 const indY = dataToUse.map(d => d.y);
                 const reg = calculateRegression(indY, trappedDaysArray, validDataLength);
-                
                 labelSpan.innerHTML = `${baseName}${badges} (vs 물림일수 r²: ${reg.r2.toFixed(4)})`;
                 labelSpan.style.color = '#ffeb3b';
             } else {
@@ -497,10 +519,11 @@
                 trendData = calc.tData;
                 detrendedData = calc.dData;
                 
+                // 물림일수 측정 및 캐싱
                 const trapCalc = calculateTrappedDays(mainData);
                 trappedDaysArray = trapCalc.trapped;
                 validDataLength = trapCalc.validLen;
-
+                
                 let trappedDataObj = [];
                 for(let i=0; i<mainData.length; i++) {
                     if (i < validDataLength) {
@@ -509,10 +532,16 @@
                         trappedDataObj.push({ x: mainData[i].x, y: null });
                     }
                 }
-                cachedIndicators['TRAPPED_DAYS'] = trappedDataObj;
+                cachedIndicators['TRAPPED_DAYS'] = trappedDataObj; 
+
+                // 신규: 수하일수(Underwater Days) 로직 개선 및 안전 구간 도출
+                const underwaterCalc = calculateUnderwaterDays(mainData);
+                underwaterDaysArray = underwaterCalc.underwater;
+                validUnderwaterLength = underwaterCalc.validLen;
 
                 document.getElementById('cors-guide').style.display = 'none'; 
                 document.getElementById('reset-zoom-btn').style.display = 'inline-block';
+                document.getElementById('csv-btn').style.display = 'inline-block';
                 
                 updateMetricsDisplays();
                 updateChart();
@@ -523,23 +552,13 @@
                 document.querySelectorAll('.indicator-cb').forEach(cb => {
                     const id = cb.value;
                     const source = cb.dataset.source;
-                    
                     if (!cachedIndicators[id]) {
-                        let p;
-                        if (id === 'VIX_RATIO') {
-                            p = fetchVixRatio();
-                        } else if (id === 'MARKET_BREADTH') {
-                            p = fetchMarketBreadth();
-                        } else {
-                            p = (source === 'yahoo' ? fetchYahoo(id) : fetchFred(id));
-                        }
-                        
+                        let p = (id === 'VIX_RATIO') ? fetchVixRatio() : (id === 'MARKET_BREADTH') ? fetchMarketBreadth() : (source === 'yahoo' ? fetchYahoo(id) : fetchFred(id));
                         p.then(data => {
                             cachedIndicators[id] = data;
                             alignedIndicators[id] = alignIndicatorData(data);
                             updateIndicatorR2Label(cb);
-                        })
-                        .catch(err => {
+                        }).catch(err => {
                             console.error(`[${id}] 실패:`, err);
                             document.getElementById(`label-${id.replace(/\W/g, '')}`).innerHTML += ` <span class="err-text">(오류)</span>`;
                         });
@@ -560,6 +579,61 @@
             }
         });
 
+        document.getElementById('csv-btn').addEventListener('click', () => {
+            if (mainData.length === 0) {
+                alert('데이터가 없습니다. 먼저 차트를 검색해 주세요.');
+                return;
+            }
+
+            const activeInds = [];
+            document.querySelectorAll('.indicator-cb:checked').forEach(cb => {
+                activeInds.push({ id: cb.value, name: cb.dataset.name });
+            });
+            if (document.getElementById('t10y2y-cb').checked) {
+                activeInds.push({ id: 'T10Y2Y', name: '장단기 금리차' });
+            }
+            if (document.getElementById('trapped-cb').checked) {
+                activeInds.push({ id: 'TRAPPED_DAYS', name: '물림일수' });
+            }
+
+            let csvContent = "Date,Close,수하일수";
+            activeInds.forEach(ind => { csvContent += `,${ind.name}`; });
+            csvContent += "\n";
+
+            for (let i = 0; i < mainData.length; i++) {
+                let dateStr = toYYYYMMDD(mainData[i].x);
+                let closeVal = mainData[i].y.toFixed(4);
+                
+                // 최대 수하일수 안전 구간 이후의 최신 데이터는 제외 (빈칸 공란 처리)
+                let underwaterVal = (i < validUnderwaterLength) ? underwaterDaysArray[i] : ""; 
+                
+                let row = `${dateStr},${closeVal},${underwaterVal}`;
+                
+                activeInds.forEach(ind => {
+                    let val = "";
+                    if (ind.id === 'TRAPPED_DAYS') {
+                        let obj = cachedIndicators['TRAPPED_DAYS'][i];
+                        val = (obj && obj.y !== null) ? obj.y : "";
+                    } else if (alignedIndicators[ind.id] && alignedIndicators[ind.id].raw[i]) {
+                        let y = alignedIndicators[ind.id].raw[i].y;
+                        val = (y !== null && y !== undefined) ? y.toFixed(4) : "";
+                    }
+                    row += `,${val}`;
+                });
+                
+                csvContent += row + "\n";
+            }
+
+            const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", `${activeTicker}_data.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+
         const toggleBtn = document.getElementById('toggle-btn');
         toggleBtn.addEventListener('click', () => {
             isDetrendedMode = !isDetrendedMode;
@@ -570,7 +644,6 @@
                 toggleBtn.textContent = '추세선 기반 선형화: OFF';
                 toggleBtn.classList.add('off');
             }
-            
             document.querySelectorAll('.indicator-cb').forEach(cb => updateIndicatorR2Label(cb));
             if (mainData.length > 0) updateChart();
         });
@@ -585,12 +658,36 @@
                 logBtn.textContent = '로그: 비활성화';
                 logBtn.classList.add('off');
             }
-            
             document.querySelectorAll('.indicator-cb').forEach(cb => updateIndicatorR2Label(cb));
             if (mainData.length > 0) updateChart();
         });
 
         document.getElementById('trapped-cb').addEventListener('change', () => {
+            if (mainData.length > 0) updateChart();
+        });
+
+        document.getElementById('t10y2y-cb').addEventListener('change', async (e) => {
+            const cb = e.target;
+            const id = 'T10Y2Y';
+            if (cb.checked && !cachedIndicators[id]) {
+                cb.disabled = true;
+                const status = document.getElementById('status-msg');
+                status.textContent = "장단기 금리차 로딩 중...";
+                status.style.display = 'inline';
+                try {
+                    const data = await fetchFred(id);
+                    cachedIndicators[id] = data;
+                    if (mainData.length > 0) {
+                        alignedIndicators[id] = alignIndicatorData(data);
+                    }
+                } catch(err) {
+                    alert('장단기 금리차 데이터를 가져오지 못했습니다.');
+                    cb.checked = false;
+                } finally {
+                    cb.disabled = false;
+                    status.style.display = 'none';
+                }
+            }
             if (mainData.length > 0) updateChart();
         });
 
@@ -603,21 +700,12 @@
             const id = cb.value;
             const source = cb.dataset.source;
             const status = document.getElementById('status-msg');
-
             if (cb.checked && !cachedIndicators[id]) {
                 cb.disabled = true;
                 status.textContent = "데이터 로딩 중...";
                 status.style.display = 'inline';
                 try {
-                    let rawData;
-                    if (id === 'VIX_RATIO') {
-                        rawData = await fetchVixRatio(); 
-                    } else if (id === 'MARKET_BREADTH') {
-                        rawData = await fetchMarketBreadth(); 
-                    } else {
-                        rawData = source === 'yahoo' ? fetchYahoo(id) : fetchFred(id);
-                    }
-                    
+                    let rawData = (id === 'VIX_RATIO') ? await fetchVixRatio() : (id === 'MARKET_BREADTH') ? await fetchMarketBreadth() : (source === 'yahoo' ? await fetchYahoo(id) : await fetchFred(id));
                     cachedIndicators[id] = rawData;
                     if(mainData.length > 0) {
                         alignedIndicators[id] = alignIndicatorData(rawData);
@@ -642,13 +730,11 @@
                 const yAxis = chart.scales.y;
                 const data = chart.data.datasets[0].data;
                 if (!data || data.length === 0) return;
-
                 ctx.save();
                 ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
                 ctx.lineWidth = 1;
                 ctx.setLineDash([5, 5]);
                 ctx.beginPath();
-
                 for (let i = 1; i < data.length; i++) {
                     const prevYear = new Date(data[i-1].x).getFullYear();
                     const currYear = new Date(data[i].x).getFullYear();
@@ -667,7 +753,6 @@
 
         function updateChart() {
             if (chartInstance) chartInstance.destroy();
-
             const datasets = [];
             const yAxisType = isLogMode ? 'logarithmic' : 'linear';
             const scales = {
@@ -698,17 +783,28 @@
                 scales['y_trapped'] = { type: 'linear', position: 'right', display: false };
             }
 
+            if (document.getElementById('t10y2y-cb').checked && cachedIndicators['T10Y2Y']) {
+                const yAxisID = 'y_T10Y2Y';
+                let plotData = alignedIndicators['T10Y2Y'].raw; 
+                datasets.push({
+                    label: '장단기 금리차',
+                    data: plotData,
+                    borderColor: '#00e5ff', 
+                    borderWidth: 1.5, pointRadius: 0, yAxisID: yAxisID, spanGaps: true
+                });
+                scales[yAxisID] = { type: 'linear', position: 'right', display: false };
+            }
+
             let colorIndex = 0;
             document.querySelectorAll('.indicator-cb:checked').forEach(cb => {
                 const id = cb.value;
                 const baseName = cb.dataset.name;
                 const canDetrend = cb.dataset.detrend === 'true';
 
-                if (alignedIndicators[id] && id !== 'TRAPPED_DAYS') {
+                if (alignedIndicators[id] && id !== 'TRAPPED_DAYS' && id !== 'T10Y2Y') {
                     const yAxisID = 'y_' + id;
                     let useDetrended = isDetrendedMode && canDetrend;
                     let plotData = useDetrended ? alignedIndicators[id].detrended : alignedIndicators[id].raw;
-                    
                     let currentScale = isLogMode ? 'logarithmic' : 'linear';
 
                     if (currentScale === 'logarithmic') {
@@ -721,7 +817,6 @@
                         borderColor: IND_COLORS[colorIndex % IND_COLORS.length], 
                         borderWidth: 1.5, pointRadius: 0, yAxisID: yAxisID, spanGaps: true
                     });
-                    
                     scales[yAxisID] = { type: currentScale, position: 'right', display: false };
                     colorIndex++;
                 }
