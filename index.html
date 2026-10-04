@@ -54,6 +54,10 @@
         #csv-btn { background-color: #ff9800; color: white; display: none; }
         #csv-btn:hover { background-color: #fb8c00; }
         
+        /* 노후 데이터 자르기 버튼 스타일 */
+        #trim-btn { background-color: #e53935; color: white; display: none; }
+        #trim-btn:hover { background-color: #c62828; }
+        
         .info-btn { background-color: transparent; border: 1px solid #ffeb3b; color: #ffeb3b; display: none; }
         .info-btn:hover { background-color: #ffeb3b; color: #121212; }
         
@@ -117,6 +121,7 @@
         <button id="search-btn">차트 검색</button>
         <button id="toggle-btn">추세선 기반 수평화: ON</button>
         <button id="log-btn">메인차트 로그: 활성화</button>
+        <button id="trim-btn">노후 데이터 자르기</button>
         <button id="reset-zoom-btn">줌 초기화</button>
         <button id="csv-btn">CSV 다운로드</button>
         <span id="status-msg" class="loading">데이터 처리 중...</span>
@@ -191,7 +196,7 @@
                 { id: 'DGS2', name: '2년물 국채 금리', scale: 'linear', detrend: false },
                 { id: 'SAHMREALTIME', name: '샴의 법칙', scale: 'linear', detrend: false }, 
                 { id: 'DFII10', name: '미국 10년물 실질 금리', scale: 'linear', detrend: false }, 
-                { id: 'T10Y2Y', name: '장단기 금리차', scale: 'linear', detrend: false }, // 독립 패널에서 복귀
+                { id: 'T10Y2Y', name: '장단기 금리차', scale: 'linear', detrend: false },
                 { id: 'WALCL', name: '연준 총자산 규모', scale: 'log', detrend: true }, 
                 { id: 'M2SL', name: 'M2 통화량', scale: 'log', detrend: true }          
             ]
@@ -212,8 +217,8 @@
         
         let isDetrendedMode = true; 
         let cachedIndicators = {}; 
-        let isMainLogMode = true; // 메인 차트 전용 로그 스위치
-        let indLogStates = {}; // 개별 보조지표 로그 스위치 상태 관리
+        let isMainLogMode = true;
+        let indLogStates = {}; 
         let alignedIndicators = {}; 
         let activeTicker = "";
 
@@ -237,7 +242,7 @@
                 group.innerHTML = `<h3>${source === 'yahoo' ? '야후 파이낸스' : '미연준 (FRED)'}</h3>`;
                 
                 INDICATORS[source].forEach(ind => {
-                    indLogStates[ind.id] = (ind.scale === 'log'); // 기본값 설정
+                    indLogStates[ind.id] = (ind.scale === 'log'); 
                     const logBtnClass = indLogStates[ind.id] ? 'ind-log-toggle active' : 'ind-log-toggle';
 
                     const label = document.createElement('label');
@@ -254,14 +259,13 @@
                     
                     label.querySelector('.indicator-cb').addEventListener('change', handleIndicatorToggle);
                     
-                    // 개별 보조지표 LOG 버튼 이벤트
                     label.querySelector('.ind-log-toggle').addEventListener('click', (e) => {
-                        e.preventDefault(); // 체크박스 클릭 방지
+                        e.preventDefault(); 
                         e.stopPropagation();
                         
                         const btn = e.target;
                         const id = btn.dataset.id;
-                        indLogStates[id] = !indLogStates[id]; // 상태 반전
+                        indLogStates[id] = !indLogStates[id]; 
                         
                         if (indLogStates[id]) btn.classList.add('active');
                         else btn.classList.remove('active');
@@ -469,8 +473,8 @@
         }
 
         function updateMetricsDisplays() {
-            const logPrice = mainData.map(d => Math.log(d.y));
-            const logTrend = trendData.map(d => Math.log(d.y));
+            const logPrice = mainData.map(d => d.y > 0 ? Math.log(d.y) : null);
+            const logTrend = trendData.map(d => d.y > 0 ? Math.log(d.y) : null);
             const trendReg = calculateRegression(logPrice, logTrend, mainData.length);
             const trendR2Elem = document.getElementById('r2-trend-display');
             trendR2Elem.style.display = 'block';
@@ -510,8 +514,6 @@
 
             let badges = '';
             if (isDetrendedMode && canDetrend) badges += ` <span class="detrend-badge">종가/추세</span>`;
-            
-            // 전역 isLogMode가 아닌 각 지표의 개별 indLogStates 값을 읽어 배지 부착
             if (indLogStates[id]) badges += ` <span class="log-badge">LOG</span>`;
 
             if (alignedIndicators[id] && trappedDaysArray.length > 0) {
@@ -562,6 +564,7 @@
                 document.getElementById('cors-guide').style.display = 'none'; 
                 document.getElementById('reset-zoom-btn').style.display = 'inline-block';
                 document.getElementById('csv-btn').style.display = 'inline-block';
+                document.getElementById('trim-btn').style.display = 'inline-block'; // 자르기 버튼 표시
                 
                 updateMetricsDisplays();
                 updateChart();
@@ -599,6 +602,92 @@
             }
         });
 
+        // ✂️ 노후 데이터 자르기 기능 구현
+        document.getElementById('trim-btn').addEventListener('click', () => {
+            if (mainData.length < 100) {
+                alert("데이터가 너무 적어 자르기를 수행할 수 없습니다.");
+                return;
+            }
+            
+            const status = document.getElementById('status-msg');
+            status.textContent = "최적의 시작점 탐색 중...";
+            status.style.display = 'inline';
+            
+            // 브라우저 렌더링을 위해 setTimeout 적용
+            setTimeout(() => {
+                const limitIndex = Math.floor(mainData.length * 0.15); // 전체의 15% 구간
+                let maxR2 = -1;
+                let bestIndex = 0;
+                
+                // 15% 구간 내에서 새로운 시작점을 순회하며 R2 최대값 탐색
+                for (let i = 0; i <= limitIndex; i++) {
+                    const slicedData = mainData.slice(i);
+                    const calc = calculateTrend(slicedData);
+                    
+                    const logPrice = slicedData.map(d => d.y > 0 ? Math.log(d.y) : null);
+                    const logTrend = calc.tData.map(d => d.y > 0 ? Math.log(d.y) : null);
+                    
+                    const reg = calculateRegression(logPrice, logTrend, slicedData.length);
+                    
+                    if (reg.r2 > maxR2) {
+                        maxR2 = reg.r2;
+                        bestIndex = i;
+                    }
+                }
+                
+                if (bestIndex > 0) {
+                    // 메인 데이터 잘라내기
+                    mainData = mainData.slice(bestIndex);
+                    
+                    // 재계산 (추세선 및 Detrend)
+                    const calc = calculateTrend(mainData);
+                    trendData = calc.tData;
+                    detrendedData = calc.dData;
+                    
+                    // 물림일수 재계산
+                    const trapCalc = calculateTrappedDays(mainData);
+                    trappedDaysArray = trapCalc.trapped;
+                    validDataLength = trapCalc.validLen;
+                    
+                    let trappedDataObj = [];
+                    for(let i=0; i<mainData.length; i++) {
+                        if (i < validDataLength) {
+                            trappedDataObj.push({ x: mainData[i].x, y: trappedDaysArray[i] });
+                        } else {
+                            trappedDataObj.push({ x: mainData[i].x, y: null });
+                        }
+                    }
+                    cachedIndicators['TRAPPED_DAYS'] = trappedDataObj; 
+
+                    // 수하일수 재계산
+                    const underwaterCalc = calculateUnderwaterDays(mainData);
+                    underwaterDaysArray = underwaterCalc.underwater;
+                    validUnderwaterLength = underwaterCalc.validLen;
+                    
+                    // 기존에 로드된 보조지표들을 새 시작점에 맞춰 재정렬(Align)
+                    for (let id in cachedIndicators) {
+                        if (id !== 'TRAPPED_DAYS' && cachedIndicators[id]) {
+                            alignedIndicators[id] = alignIndicatorData(cachedIndicators[id]);
+                        }
+                    }
+                    
+                    // UI 업데이트
+                    document.querySelectorAll('.indicator-cb:checked').forEach(cb => {
+                        updateIndicatorR2Label(cb);
+                    });
+                    
+                    updateMetricsDisplays();
+                    updateChart();
+                    
+                    alert(`최적 시작점 발견: ${toYYYYMMDD(mainData[0].x)}\n(앞부분 ${bestIndex}일치 노후 데이터가 정리되었습니다.)`);
+                } else {
+                    alert('현재 차트의 첫 시작점이 이미 최적이거나, 더 나은 구간을 찾을 수 없습니다.');
+                }
+                
+                status.style.display = 'none';
+            }, 50);
+        });
+
         document.getElementById('csv-btn').addEventListener('click', () => {
             if (mainData.length === 0) {
                 alert('데이터가 없습니다. 먼저 차트를 검색해 주세요.');
@@ -620,7 +709,6 @@
             for (let i = 0; i < mainData.length; i++) {
                 let dateStr = toYYYYMMDD(mainData[i].x);
                 let closeVal = mainData[i].y.toFixed(4);
-                
                 let underwaterVal = (i < validUnderwaterLength) ? underwaterDaysArray[i] : ""; 
                 
                 let row = `${dateStr},${closeVal},${underwaterVal}`;
@@ -631,7 +719,6 @@
                         let obj = cachedIndicators['TRAPPED_DAYS'][i];
                         val = (obj && obj.y !== null) ? obj.y : "";
                     } else if (alignedIndicators[ind.id] && alignedIndicators[ind.id].raw[i]) {
-                        // 원본 데이터 그대로 CSV에 반영 (0.0001 치환 전)
                         let y = alignedIndicators[ind.id].raw[i].y;
                         val = (y !== null && y !== undefined) ? y.toFixed(4) : "";
                     }
@@ -675,7 +762,6 @@
                 logBtn.textContent = '메인차트 로그: 비활성화';
                 logBtn.classList.add('off');
             }
-            // 메인차트 로그 버튼은 메인 차트만 관여하므로 보조지표 라벨 업데이트 미수행
             if (mainData.length > 0) updateChart();
         });
 
@@ -747,12 +833,10 @@
             if (chartInstance) chartInstance.destroy();
             const datasets = [];
             
-            // 메인 차트 데이터 로그 설정
             const yAxisType = isMainLogMode ? 'logarithmic' : 'linear';
             let chartMainData = mainData;
             let chartDetrendedData = detrendedData;
             
-            // 메인 차트도 로그일 경우 만약을 위해 0.0001 치환 적용
             if (yAxisType === 'logarithmic') {
                 chartMainData = chartMainData.map(d => ({ x: d.x, y: (d.y !== null && d.y <= 0) ? 0.0001 : d.y }));
                 chartDetrendedData = chartDetrendedData.map(d => ({ x: d.x, y: (d.y !== null && d.y <= 0) ? 0.0001 : d.y }));
@@ -797,10 +881,8 @@
                     let useDetrended = isDetrendedMode && canDetrend;
                     let plotData = useDetrended ? alignedIndicators[id].detrended : alignedIndicators[id].raw;
                     
-                    // 각 지표에 부여된 개별 로그 스위치 값(indLogStates[id])을 호출
                     let currentScale = indLogStates[id] ? 'logarithmic' : 'linear';
 
-                    // 0보다 작거나 같은 값들은 로그 적용 대신 0.0001로 강제 반환 (차트 랜더링용)
                     if (currentScale === 'logarithmic') {
                         plotData = plotData.map(d => ({ x: d.x, y: (d.y !== null && d.y <= 0) ? 0.0001 : d.y }));
                     }
