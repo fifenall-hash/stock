@@ -54,7 +54,6 @@
         #csv-btn { background-color: #ff9800; color: white; display: none; }
         #csv-btn:hover { background-color: #fb8c00; }
         
-        /* 노후 데이터 자르기 버튼 스타일 */
         #trim-btn { background-color: #e53935; color: white; display: none; }
         #trim-btn:hover { background-color: #c62828; }
         
@@ -80,13 +79,12 @@
         .indicator-group { margin-bottom: 12px; }
         .indicator-group h3 { margin-top: 0; font-size: 15px; color: var(--accent); border-bottom: 1px solid #333; padding-bottom: 6px; margin-bottom: 8px; }
         
-        .checkbox-label { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; cursor: pointer; color: #ddd; font-size: 13.5px; background: #2a2a2a; padding: 7px 10px; border-radius: 4px; transition: background 0.2s; }
+        .checkbox-label { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; cursor: pointer; color: #ddd; font-size: 13.5px; background: #2a2a2a; padding: 10px; border-radius: 4px; transition: background 0.2s; }
         .checkbox-label:hover { background: #333; }
         
-        .ind-text { display: inline-block; word-break: keep-all; }
+        .ind-text { display: inline-block; word-break: keep-all; font-weight: bold; }
         .err-text { color: #ff5252; font-size: 12px; margin-left: 5px; }
         
-        /* 개별 보조지표 LOG 토글 버튼 스타일 */
         .ind-log-toggle {
             font-size: 10px; font-weight: bold; padding: 3px 6px;
             border: 1px solid #555; background: transparent; color: #777;
@@ -94,9 +92,13 @@
         }
         .ind-log-toggle.active { background: #7e57c2; color: #fff; border-color: #7e57c2; }
         
-        .log-badge, .detrend-badge { font-size: 9px; font-weight: bold; color: white; padding: 2px 4px; border-radius: 3px; margin-left: 4px; vertical-align: text-top; }
-        .log-badge { background-color: #7e57c2; }
-        .detrend-badge { background-color: #ff9800; }
+        .help-btn {
+            background: #444; color: #fff; border: none; border-radius: 50%;
+            width: 18px; height: 18px; font-size: 11px; font-weight: bold;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; padding: 0; transition: background 0.2s;
+        }
+        .help-btn:hover { background: var(--accent); color: #000; }
 
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; }
         .modal-content { background: var(--panel-bg); padding: 25px; border-radius: 8px; max-width: 500px; color: #fff; border-top: 4px solid var(--accent); box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
@@ -159,6 +161,7 @@
         </div>
     </div>
 
+    <!-- 물림일수 설명 모달 -->
     <div class="modal-overlay" id="info-modal">
         <div class="modal-content">
             <h3 style="margin-top:0; color:var(--accent);">💡 물림일수(Trapped Days)란?</h3>
@@ -166,11 +169,21 @@
                 해당 거래일의 종가보다 더 낮은 종가가 <strong>미래 시점</strong>에 등장한 총 일수를 뜻합니다.<br><br>
                 즉, 물림일수가 높을수록 현재 주가가 단기~중기적으로 고평가되어 오랫동안 손실(물림) 구간에 갇힐 확률이 높았다는 의미입니다.<br><br>
                 <strong style="color:#ff5252;">🔥 예상물림일수 추정</strong><br>
-                과거의 (종가/추세선) 비율과 (물림일수) 간의 선형 회귀 방정식($Y = mX + c$)을 도출한 후, 가장 최신 일자의 종가/추세선 값을 대입하여 향후 며칠이나 물려있을지 통계적으로 추정한 값입니다.<br><br>
-                <strong style="color:#ffeb3b;">※ 제외 구간 결정 방법</strong><br>
-                전체 기간을 탐색하여 '가장 크게 발생한 물림일수'를 찾고, 최신 날짜로부터 역산하여 이 기간만큼은 잘라냅니다. 최근 구간은 아직 미래 데이터가 충분히 쌓이지 않아 물림일수가 기계적으로 작게 측정되므로 상관관계 및 선형회귀 계산에서 안전하게 제외시켰습니다.
+                과거의 (종가/추세선) 비율과 (물림일수) 간의 선형 회귀 방정식($Y = mX + c$)을 도출한 후, 가장 최신 일자의 종가/추세선 값을 대입하여 향후 며칠이나 물려있을지 통계적으로 추정한 값입니다.
             </p>
             <button class="modal-close-btn" id="close-modal-btn">닫기</button>
+        </div>
+    </div>
+
+    <!-- 개별 보조지표 설명 모달 -->
+    <div class="modal-overlay" id="ind-info-modal">
+        <div class="modal-content">
+            <h3 id="ind-modal-title" style="margin-top:0; color:var(--accent);">지표 이름</h3>
+            <p style="font-size:15px; background:#2a2a2a; padding:10px; border-radius:4px; border-left:4px solid #ff5252;">
+                <strong>🚨 경고 임계치:</strong> <span id="ind-modal-threshold" style="color:#ff5252; font-weight:bold;">-</span>
+            </p>
+            <p id="ind-modal-desc" style="line-height:1.6; font-size:14px; color:#ddd; margin-top:15px;"></p>
+            <button class="modal-close-btn" id="ind-close-modal-btn">닫기</button>
         </div>
     </div>
 
@@ -179,26 +192,27 @@
             navigator.serviceWorker.register('sw.js').catch(err => console.log('SW 등록 실패:', err));
         }
 
+        // 보조지표 설정 데이터 (임계치 및 설명, 위험 여부 판별 함수 포함)
         const INDICATORS = {
             'yahoo': [
-                { id: 'DX-Y.NYB', name: '달러 인덱스', scale: 'linear', detrend: false },
-                { id: 'CL=F', name: 'WTI 원유 선물', scale: 'linear', detrend: false },
-                { id: 'HG=F', name: '구리 선물', scale: 'linear', detrend: false },
-                { id: '^IRX', name: '13주 만기 국채 금리', scale: 'linear', detrend: false },
-                { id: '^VXN', name: '나스닥 변동성 지수', scale: 'linear', detrend: false },
-                { id: '^MOVE', name: '금리 안정성 지표 (MOVE)', scale: 'linear', detrend: false }, 
-                { id: 'VIX_RATIO', name: 'VIX 백워데이션', scale: 'linear', detrend: false },
-                { id: 'MARKET_BREADTH', name: '시장 폭 (RSP/SPY)', scale: 'linear', detrend: false }, 
-                { id: 'BTC-USD', name: '비트코인', scale: 'log', detrend: true },
-                { id: 'GC=F', name: '금 선물', scale: 'log', detrend: true }   
+                { id: '^VXN', name: '나스닥 변동성 지수(VXN)', scale: 'linear', detrend: false, thresholdStr: '30 이상', desc: '나스닥 100 옵션의 내재변동성입니다. 30을 넘어서면 시장 조성자들의 하방 감마 헤지가 기계적 선물 매도로 이어져 하락이 가속화됩니다.', check: v => v >= 30 },
+                { id: 'VIX_RATIO', name: 'VIX 백워데이션', scale: 'linear', detrend: false, thresholdStr: '1.0 이상', desc: '단기 VIX가 3개월 VIX를 넘어서는 역조세(백워데이션) 상태입니다. 투자자들이 먼 미래보다 당장의 위험을 훨씬 크게 본다는 뜻으로 단기 폭락의 징조입니다.', check: v => v >= 1.0 },
+                { id: '^MOVE', name: '금리 변동성 지수(MOVE)', scale: 'linear', detrend: false, thresholdStr: '120 이상', desc: '미국 국채 시장의 변동성 지표입니다. 120을 넘으면 레버리지 펀드의 담보 가치 훼손 및 마진콜이 발생해 위기가 주식 시장으로 전이됩니다.', check: v => v >= 120 },
+                { id: 'DX-Y.NYB', name: '달러 인덱스', scale: 'linear', detrend: false, thresholdStr: '105 이상', desc: '글로벌 달러 가치 지수입니다. 105를 상회하는 강달러는 미국 다국적 테크 기업들의 해외 매출 환차손을 유발하고 글로벌 자산 청산을 강제합니다.', check: v => v >= 105 },
+                { id: 'CL=F', name: 'WTI 원유 선물', scale: 'linear', detrend: false, thresholdStr: '90 이상 또는 60 이하', desc: '90달러 이상은 인플레이션 쇼크 및 금리 인상 장기화 우려를, 60달러 이하는 글로벌 수요 파괴(경기 침체)를 의미하여 양방향 모두 기술주에 치명적입니다.', check: v => v >= 90 || v <= 60 },
+                { id: 'HG=F', name: '구리 선물', scale: 'linear', detrend: false, thresholdStr: '지속적 추세 하락', desc: '닥터 코퍼(Dr. Copper)라 불리는 대표적 경기 선행 지표입니다. 구리 가격의 지속적인 하락은 전방 IT 및 제조업 수요 둔화와 경기 침체 진입을 시사합니다.', check: v => false }, 
+                { id: '^IRX', name: '13주 만기 국채 금리', scale: 'linear', detrend: false, thresholdStr: '수직 급락', desc: '초단기 금리입니다. 증시 고점 부근에서 며칠 만에 금리가 수직 급락한다면, 시스템 위기 발생으로 연준의 긴급 금리 인하를 시장이 베팅하기 시작했다는 위험 신호입니다.', check: v => false },
+                { id: 'MARKET_BREADTH', name: '시장 폭 (RSP/SPY)', scale: 'linear', detrend: false, thresholdStr: '30 근방 및 하락 추세', desc: '동일가중(RSP) 대비 시총가중(SPY) 비율입니다. 지수는 오르는데 이 비율이 계속 낮아진다면, 극소수 빅테크만 오르고 대다수 종목은 하락 중이라는 뜻으로 상승 동력 고갈의 전조입니다.', check: v => v <= 30 },
+                { id: 'BTC-USD', name: '비트코인', scale: 'log', detrend: true, thresholdStr: '주요 지지선 이탈', desc: '글로벌 초과 유동성의 최전선입니다. 나스닥이 고점일 때 비트코인이 먼저 추세를 깨고 하락하면 스마트머니(유동성)가 위험자산 시장을 선도적으로 탈출하고 있다는 신호입니다.', check: v => false },
+                { id: 'GC=F', name: '금 선물', scale: 'log', detrend: true, thresholdStr: '증시와 동반 급등', desc: '대표적인 안전자산입니다. 나스닥 고점 부근에서 금 가격도 비정상적으로 치솟는다면 자금이 다가올 충격을 대비해 방어 자산으로 도피 중임을 뜻합니다.', check: v => false }
             ],
             'fred': [
-                { id: 'DGS2', name: '2년물 국채 금리', scale: 'linear', detrend: false },
-                { id: 'SAHMREALTIME', name: '샴의 법칙', scale: 'linear', detrend: false }, 
-                { id: 'DFII10', name: '미국 10년물 실질 금리', scale: 'linear', detrend: false }, 
-                { id: 'T10Y2Y', name: '장단기 금리차', scale: 'linear', detrend: false },
-                { id: 'WALCL', name: '연준 총자산 규모', scale: 'log', detrend: true }, 
-                { id: 'M2SL', name: 'M2 통화량', scale: 'log', detrend: true }          
+                { id: 'DFII10', name: '미국 10년물 실질 금리', scale: 'linear', detrend: false, thresholdStr: '2.0% 이상', desc: '명목금리에서 기대 인플레이션을 뺀 순수 자본 조달 비용입니다. 2.0%를 넘어서면 고PER 빅테크 기업들의 미래 실적에 대한 할인율이 팽창하여 멀티플이 폭락합니다.', check: v => v >= 2.0 },
+                { id: 'T10Y2Y', name: '장단기 금리차', scale: 'linear', detrend: false, thresholdStr: '0 이상 (역전 해소)', desc: '10년물과 2년물 금리 차이입니다. 마이너스(역전) 상태에서 0 위로 치솟는 순간(역전 해소)은 단기 금리가 경기 침체 공포로 급락함을 의미하며 실적 쇼크를 동반합니다.', check: v => v >= 0 },
+                { id: 'SAHMREALTIME', name: '샴의 법칙', scale: 'linear', detrend: false, thresholdStr: '0.50%p 이상', desc: '최근 3개월 실업률 평균이 1년 저점 대비 0.5%p 이상 오르면 통계적으로 예외 없이 경기 침체에 진입했음을 선언하는 지표입니다.', check: v => v >= 0.50 },
+                { id: 'DGS2', name: '2년물 국채 금리', scale: 'linear', detrend: false, thresholdStr: '수직 급락', desc: '통화정책 기대를 가장 민감하게 반영합니다. 끝없이 오르다 돌연 수직 낙하를 시작한다면, 시장이 연준의 통제 불능 상태(경착륙)를 확신하고 반영하는 중입니다.', check: v => false },
+                { id: 'WALCL', name: '연준 총자산 규모', scale: 'log', detrend: true, thresholdStr: '기울기 급감 (QT 가속)', desc: '시장에 공급된 연준의 유동성 총량입니다. 자산 규모가 지속적으로 감소(양적긴축)하면 증시를 떠받칠 체력이 고갈되어 작은 악재에도 지수가 크게 휘청입니다.', check: v => false },
+                { id: 'M2SL', name: 'M2 통화량', scale: 'log', detrend: true, thresholdStr: '전년 대비 마이너스', desc: '실물 경제에 풀린 시중 통화량입니다. M2가 역성장하면 기업과 가계의 자금줄이 마르고 신용 경색이 발생해 자산 시장이 무너지는 핵심 원인이 됩니다.', check: v => false }
             ]
         };
         
@@ -208,10 +222,8 @@
         let mainData = [];       
         let trendData = [];      
         let detrendedData = [];  
-        
         let trappedDaysArray = [];
         let validDataLength = 0; 
-
         let underwaterDaysArray = [];
         let validUnderwaterLength = 0; 
         
@@ -222,10 +234,16 @@
         let alignedIndicators = {}; 
         let activeTicker = "";
 
+        // 메인 모달
         const infoModal = document.getElementById('info-modal');
         document.getElementById('info-modal-btn').addEventListener('click', () => infoModal.style.display = 'flex');
         document.getElementById('close-modal-btn').addEventListener('click', () => infoModal.style.display = 'none');
         infoModal.addEventListener('click', (e) => { if (e.target === infoModal) infoModal.style.display = 'none'; });
+
+        // 개별 지표 팝업 모달
+        const indInfoModal = document.getElementById('ind-info-modal');
+        document.getElementById('ind-close-modal-btn').addEventListener('click', () => indInfoModal.style.display = 'none');
+        indInfoModal.addEventListener('click', (e) => { if (e.target === indInfoModal) indInfoModal.style.display = 'none'; });
 
         function toYYYYMMDD(ms) {
             const d = new Date(ms);
@@ -244,34 +262,53 @@
                 INDICATORS[source].forEach(ind => {
                     indLogStates[ind.id] = (ind.scale === 'log'); 
                     const logBtnClass = indLogStates[ind.id] ? 'ind-log-toggle active' : 'ind-log-toggle';
+                    const cleanId = ind.id.replace(/\W/g, '');
 
                     const label = document.createElement('label');
                     label.className = 'checkbox-label';
                     label.innerHTML = `
-                        <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
-                            <div style="display:flex; align-items:center; gap:6px;">
-                                <input type="checkbox" class="indicator-cb" value="${ind.id}" data-source="${source}" data-name="${ind.name}" data-scale="${ind.scale}" data-detrend="${ind.detrend}"> 
-                                <span class="ind-text" id="label-${ind.id.replace(/\W/g, '')}">${ind.name}</span>
+                        <div style="display:flex; flex-direction:column; gap:6px; width:100%;">
+                            <div style="display:flex; align-items:center; justify-content:space-between;">
+                                <div style="display:flex; align-items:center; gap:6px;">
+                                    <input type="checkbox" class="indicator-cb" value="${ind.id}" data-source="${source}"> 
+                                    <span class="ind-text">${ind.name}</span>
+                                    <button type="button" class="help-btn" data-id="${ind.id}">?</button>
+                                </div>
+                                <button type="button" class="${logBtnClass}" data-id="${ind.id}">LOG</button>
                             </div>
-                            <button type="button" class="${logBtnClass}" data-id="${ind.id}">LOG</button>
+                            <div style="display:flex; justify-content:space-between; font-size:13px; color:#aaa; padding-left:24px;">
+                                <span style="font-weight:bold;">현재: <strong id="val-${cleanId}" style="color:#ffffff;">-</strong></span>
+                                <span>(임계치: ${ind.thresholdStr})</span>
+                            </div>
                         </div>
                     `;
                     
                     label.querySelector('.indicator-cb').addEventListener('change', handleIndicatorToggle);
                     
-                    label.querySelector('.ind-log-toggle').addEventListener('click', (e) => {
-                        e.preventDefault(); 
-                        e.stopPropagation();
+                    // [?] 버튼 이벤트
+                    label.querySelector('.help-btn').addEventListener('click', (e) => {
+                        e.preventDefault(); e.stopPropagation();
+                        const id = e.target.dataset.id;
+                        const allInds = [...INDICATORS.yahoo, ...INDICATORS.fred];
+                        const indConfig = allInds.find(i => i.id === id);
                         
+                        if (indConfig) {
+                            document.getElementById('ind-modal-title').textContent = indConfig.name;
+                            document.getElementById('ind-modal-threshold').textContent = indConfig.thresholdStr;
+                            document.getElementById('ind-modal-desc').textContent = indConfig.desc;
+                            indInfoModal.style.display = 'flex';
+                        }
+                    });
+
+                    // LOG 버튼 이벤트
+                    label.querySelector('.ind-log-toggle').addEventListener('click', (e) => {
+                        e.preventDefault(); e.stopPropagation();
                         const btn = e.target;
                         const id = btn.dataset.id;
                         indLogStates[id] = !indLogStates[id]; 
                         
                         if (indLogStates[id]) btn.classList.add('active');
                         else btn.classList.remove('active');
-                        
-                        const cb = document.querySelector(`.indicator-cb[value="${id}"]`);
-                        if (cb) updateIndicatorR2Label(cb);
                         
                         if (mainData.length > 0) updateChart();
                     });
@@ -472,6 +509,60 @@
             return { raw: alignedRaw, detrended: alignedDetrended };
         }
 
+        // 지표 현재값 UI 갱신 함수 (조건에 맞으면 빨간색)
+        function updateIndicatorLatestValue(id, indConfig) {
+            const data = cachedIndicators[id];
+            if(!data || data.length === 0) return;
+            const latest = data[data.length - 1]; // 가장 최신 데이터
+            
+            const cleanId = id.replace(/\W/g, '');
+            const valSpan = document.getElementById(`val-${cleanId}`);
+            
+            if(valSpan) {
+                const val = latest.y;
+                valSpan.textContent = `${val.toFixed(2)}`;
+                
+                // 위험 임계치 평가
+                if (indConfig.check(val)) {
+                    valSpan.style.color = '#ff5252'; // 🚨 위험 (빨간색)
+                    valSpan.style.textShadow = '0px 0px 5px rgba(255,82,82,0.8)';
+                } else {
+                    valSpan.style.color = '#ffffff'; // 정상 (흰색)
+                    valSpan.style.textShadow = 'none';
+                }
+            }
+        }
+
+        // 전체 보조지표 데이터를 백그라운드에서 조용히 수집하여 현재값을 표시해주는 로직
+        async function fetchAllIndicatorsSilently() {
+            const allInds = [...INDICATORS.yahoo, ...INDICATORS.fred];
+            for(let ind of allInds) {
+                const id = ind.id;
+                const source = INDICATORS.yahoo.includes(ind) ? 'yahoo' : 'fred';
+                
+                if (!cachedIndicators[id]) {
+                    try {
+                        let data = (id === 'VIX_RATIO') ? await fetchVixRatio() : (id === 'MARKET_BREADTH') ? await fetchMarketBreadth() : (source === 'yahoo' ? await fetchYahoo(id) : await fetchFred(id));
+                        cachedIndicators[id] = data;
+                        updateIndicatorLatestValue(id, ind);
+                        
+                        // 사용자가 체크를 미리 해둔 경우 차트에 갱신
+                        const cb = document.querySelector(`.indicator-cb[value="${id}"]`);
+                        if(cb && cb.checked && mainData.length > 0) {
+                            alignedIndicators[id] = alignIndicatorData(data);
+                            updateChart();
+                        }
+                    } catch(e) {
+                        const cleanId = id.replace(/\W/g, '');
+                        const valSpan = document.getElementById(`val-${cleanId}`);
+                        if(valSpan) valSpan.textContent = '수신 실패';
+                    }
+                } else {
+                     updateIndicatorLatestValue(id, ind);
+                }
+            }
+        }
+
         function updateMetricsDisplays() {
             const logPrice = mainData.map(d => d.y > 0 ? Math.log(d.y) : null);
             const logTrend = trendData.map(d => d.y > 0 ? Math.log(d.y) : null);
@@ -501,30 +592,6 @@
                 document.getElementById('latest-detrend').textContent = latestDetrendVal.toFixed(4);
                 document.getElementById('latest-predicted').textContent = predictedTrapped;
                 document.getElementById('latest-data-display').style.display = 'flex';
-            }
-        }
-
-        function updateIndicatorR2Label(cb) {
-            const id = cb.value;
-            const baseName = cb.dataset.name;
-            const canDetrend = cb.dataset.detrend === 'true';
-            const labelSpan = document.getElementById(`label-${id.replace(/\W/g, '')}`);
-            
-            if (id === 'TRAPPED_DAYS' || !labelSpan) return;
-
-            let badges = '';
-            if (isDetrendedMode && canDetrend) badges += ` <span class="detrend-badge">종가/추세</span>`;
-            if (indLogStates[id]) badges += ` <span class="log-badge">LOG</span>`;
-
-            if (alignedIndicators[id] && trappedDaysArray.length > 0) {
-                const dataToUse = (isDetrendedMode && canDetrend) ? alignedIndicators[id].detrended : alignedIndicators[id].raw;
-                const indY = dataToUse.map(d => d.y);
-                const reg = calculateRegression(indY, trappedDaysArray, validDataLength);
-                labelSpan.innerHTML = `${baseName}${badges} (vs 물림일수 r²: ${reg.r2.toFixed(4)})`;
-                labelSpan.style.color = '#ffeb3b';
-            } else {
-                labelSpan.innerHTML = `${baseName}${badges}`;
-                labelSpan.style.color = '#ddd';
             }
         }
 
@@ -564,35 +631,13 @@
                 document.getElementById('cors-guide').style.display = 'none'; 
                 document.getElementById('reset-zoom-btn').style.display = 'inline-block';
                 document.getElementById('csv-btn').style.display = 'inline-block';
-                document.getElementById('trim-btn').style.display = 'inline-block'; // 자르기 버튼 표시
+                document.getElementById('trim-btn').style.display = 'inline-block'; 
                 
                 updateMetricsDisplays();
                 updateChart();
                 
-                status.textContent = "보조지표 데이터 연동 중...";
-                
-                const fetchPromises = [];
-                document.querySelectorAll('.indicator-cb').forEach(cb => {
-                    const id = cb.value;
-                    const source = cb.dataset.source;
-                    if (!cachedIndicators[id]) {
-                        let p = (id === 'VIX_RATIO') ? fetchVixRatio() : (id === 'MARKET_BREADTH') ? fetchMarketBreadth() : (source === 'yahoo' ? fetchYahoo(id) : fetchFred(id));
-                        p.then(data => {
-                            cachedIndicators[id] = data;
-                            alignedIndicators[id] = alignIndicatorData(data);
-                            updateIndicatorR2Label(cb);
-                        }).catch(err => {
-                            console.error(`[${id}] 실패:`, err);
-                            document.getElementById(`label-${id.replace(/\W/g, '')}`).innerHTML += ` <span class="err-text">(오류)</span>`;
-                        });
-                        fetchPromises.push(p);
-                    } else {
-                        alignedIndicators[id] = alignIndicatorData(cachedIndicators[id]);
-                        updateIndicatorR2Label(cb);
-                    }
-                });
-
-                await Promise.all(fetchPromises);
+                // 검색 버튼 클릭 시, 메인 차트가 그려진 뒤 패널의 현재 값들을 백그라운드에서 동기화
+                fetchAllIndicatorsSilently();
                 
             } catch (err) {
                 alert('데이터를 가져오지 못했습니다. 확장프로그램 설정 및 티커를 다시 확인해 주세요.');
@@ -613,20 +658,17 @@
             status.textContent = "최적의 시작점 탐색 중...";
             status.style.display = 'inline';
             
-            // 브라우저 렌더링을 위해 setTimeout 적용
             setTimeout(() => {
-                const limitIndex = Math.floor(mainData.length * 0.15); // 전체의 15% 구간
+                const limitIndex = Math.floor(mainData.length * 0.15); 
                 let maxR2 = -1;
                 let bestIndex = 0;
                 
-                // 15% 구간 내에서 새로운 시작점을 순회하며 R2 최대값 탐색
                 for (let i = 0; i <= limitIndex; i++) {
                     const slicedData = mainData.slice(i);
                     const calc = calculateTrend(slicedData);
                     
                     const logPrice = slicedData.map(d => d.y > 0 ? Math.log(d.y) : null);
                     const logTrend = calc.tData.map(d => d.y > 0 ? Math.log(d.y) : null);
-                    
                     const reg = calculateRegression(logPrice, logTrend, slicedData.length);
                     
                     if (reg.r2 > maxR2) {
@@ -636,15 +678,12 @@
                 }
                 
                 if (bestIndex > 0) {
-                    // 메인 데이터 잘라내기
                     mainData = mainData.slice(bestIndex);
                     
-                    // 재계산 (추세선 및 Detrend)
                     const calc = calculateTrend(mainData);
                     trendData = calc.tData;
                     detrendedData = calc.dData;
                     
-                    // 물림일수 재계산
                     const trapCalc = calculateTrappedDays(mainData);
                     trappedDaysArray = trapCalc.trapped;
                     validDataLength = trapCalc.validLen;
@@ -659,22 +698,15 @@
                     }
                     cachedIndicators['TRAPPED_DAYS'] = trappedDataObj; 
 
-                    // 수하일수 재계산
                     const underwaterCalc = calculateUnderwaterDays(mainData);
                     underwaterDaysArray = underwaterCalc.underwater;
                     validUnderwaterLength = underwaterCalc.validLen;
                     
-                    // 기존에 로드된 보조지표들을 새 시작점에 맞춰 재정렬(Align)
                     for (let id in cachedIndicators) {
                         if (id !== 'TRAPPED_DAYS' && cachedIndicators[id]) {
                             alignedIndicators[id] = alignIndicatorData(cachedIndicators[id]);
                         }
                     }
-                    
-                    // UI 업데이트
-                    document.querySelectorAll('.indicator-cb:checked').forEach(cb => {
-                        updateIndicatorR2Label(cb);
-                    });
                     
                     updateMetricsDisplays();
                     updateChart();
@@ -683,7 +715,6 @@
                 } else {
                     alert('현재 차트의 첫 시작점이 이미 최적이거나, 더 나은 구간을 찾을 수 없습니다.');
                 }
-                
                 status.style.display = 'none';
             }, 50);
         });
@@ -696,7 +727,9 @@
 
             const activeInds = [];
             document.querySelectorAll('.indicator-cb:checked').forEach(cb => {
-                activeInds.push({ id: cb.value, name: cb.dataset.name });
+                const allInds = [...INDICATORS.yahoo, ...INDICATORS.fred];
+                const cfg = allInds.find(i => i.id === cb.value);
+                activeInds.push({ id: cb.value, name: cfg.name });
             });
             if (document.getElementById('trapped-cb').checked) {
                 activeInds.push({ id: 'TRAPPED_DAYS', name: '물림일수' });
@@ -748,7 +781,6 @@
                 toggleBtn.textContent = '추세선 기반 수평화: OFF';
                 toggleBtn.classList.add('off');
             }
-            document.querySelectorAll('.indicator-cb').forEach(cb => updateIndicatorR2Label(cb));
             if (mainData.length > 0) updateChart();
         });
 
@@ -777,26 +809,29 @@
             const cb = e.target;
             const id = cb.value;
             const source = cb.dataset.source;
-            const status = document.getElementById('status-msg');
-            if (cb.checked && !cachedIndicators[id]) {
-                cb.disabled = true;
-                status.textContent = "데이터 로딩 중...";
-                status.style.display = 'inline';
-                try {
-                    let rawData = (id === 'VIX_RATIO') ? await fetchVixRatio() : (id === 'MARKET_BREADTH') ? await fetchMarketBreadth() : (source === 'yahoo' ? await fetchYahoo(id) : await fetchFred(id));
-                    cachedIndicators[id] = rawData;
-                    if(mainData.length > 0) {
-                        alignedIndicators[id] = alignIndicatorData(rawData);
-                        updateIndicatorR2Label(cb);
+            const allInds = [...INDICATORS.yahoo, ...INDICATORS.fred];
+            const indConfig = allInds.find(i => i.id === id);
+            
+            if (cb.checked) {
+                if (!cachedIndicators[id]) {
+                    cb.disabled = true;
+                    try {
+                        let rawData = (id === 'VIX_RATIO') ? await fetchVixRatio() : (id === 'MARKET_BREADTH') ? await fetchMarketBreadth() : (source === 'yahoo' ? await fetchYahoo(id) : await fetchFred(id));
+                        cachedIndicators[id] = rawData;
+                        updateIndicatorLatestValue(id, indConfig);
+                    } catch (err) {
+                        alert(`[${indConfig.name}] 데이터를 가져오는 중 오류가 발생했습니다.`);
+                        cb.checked = false;
+                    } finally {
+                        cb.disabled = false;
                     }
-                } catch (err) {
-                    alert(`[${id}] 오류가 발생했습니다.`);
-                    cb.checked = false;
-                } finally {
-                    cb.disabled = false;
-                    status.style.display = 'none';
+                }
+                
+                if(mainData.length > 0 && cachedIndicators[id]) {
+                    alignedIndicators[id] = alignIndicatorData(cachedIndicators[id]);
                 }
             }
+            
             if (mainData.length > 0) updateChart();
         }
 
@@ -871,10 +906,13 @@
             }
 
             let colorIndex = 0;
+            const allInds = [...INDICATORS.yahoo, ...INDICATORS.fred];
+            
             document.querySelectorAll('.indicator-cb:checked').forEach(cb => {
                 const id = cb.value;
-                const baseName = cb.dataset.name;
-                const canDetrend = cb.dataset.detrend === 'true';
+                const indConfig = allInds.find(i => i.id === id);
+                const baseName = indConfig.name;
+                const canDetrend = indConfig.detrend;
 
                 if (alignedIndicators[id] && id !== 'TRAPPED_DAYS') {
                     const yAxisID = 'y_' + id;
